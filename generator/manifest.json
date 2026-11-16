@@ -1,0 +1,17 @@
+{
+  "seed": 42,
+  "files": [
+    {
+      "path": "orders.csv",
+      "bytes": 66468913,
+      "sha256": "e453eec15117b97ed0de6945f53364c762c10769fb56c39959cd665500423529",
+      "data_rows_excluding_header": 1000000
+    },
+    {
+      "path": "transactions.csv",
+      "bytes": 71233922,
+      "sha256": "07c875be34b47c68babb3ff28a2a26d538ed7ed4ffe69d131019e272ffa36313",
+      "data_rows_excluding_header": 1000000
+    }
+  ]
+}

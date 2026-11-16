@@ -1,0 +1,265 @@
+{
+  "seed": 42,
+  "rows_per_file": 1000000,
+  "as_of": "2026-11-01T00:00:00",
+  "orders": {
+    "anomalies": [
+      {
+        "anomaly_type": "case_whitespace",
+        "field": "category",
+        "rows": 9856,
+        "pct_of_file": 0.986
+      },
+      {
+        "anomaly_type": "case_whitespace",
+        "field": "country",
+        "rows": 10082,
+        "pct_of_file": 1.008
+      },
+      {
+        "anomaly_type": "case_whitespace",
+        "field": "order_status",
+        "rows": 9896,
+        "pct_of_file": 0.99
+      },
+      {
+        "anomaly_type": "duplicate_exact_row",
+        "field": "*all*",
+        "rows": 5001,
+        "pct_of_file": 0.5
+      },
+      {
+        "anomaly_type": "duplicate_key_conflict",
+        "field": "order_status",
+        "rows": 2357,
+        "pct_of_file": 0.236
+      },
+      {
+        "anomaly_type": "duplicate_key_conflict",
+        "field": "quantity",
+        "rows": 2505,
+        "pct_of_file": 0.251
+      },
+      {
+        "anomaly_type": "future_date",
+        "field": "order_date",
+        "rows": 3003,
+        "pct_of_file": 0.3
+      },
+      {
+        "anomaly_type": "invalid_date",
+        "field": "order_date",
+        "rows": 3973,
+        "pct_of_file": 0.397
+      },
+      {
+        "anomaly_type": "invalid_status_label",
+        "field": "order_status",
+        "rows": 2939,
+        "pct_of_file": 0.294
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "category",
+        "rows": 1261,
+        "pct_of_file": 0.126
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "country",
+        "rows": 1306,
+        "pct_of_file": 0.131
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "customer_id",
+        "rows": 1286,
+        "pct_of_file": 0.129
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "order_date",
+        "rows": 1275,
+        "pct_of_file": 0.128
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "order_id",
+        "rows": 1266,
+        "pct_of_file": 0.127
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "order_status",
+        "rows": 1251,
+        "pct_of_file": 0.125
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "quantity",
+        "rows": 1232,
+        "pct_of_file": 0.123
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "unit_price",
+        "rows": 1242,
+        "pct_of_file": 0.124
+      },
+      {
+        "anomaly_type": "out_of_range_numeric",
+        "field": "quantity",
+        "rows": 4000,
+        "pct_of_file": 0.4
+      },
+      {
+        "anomaly_type": "out_of_range_numeric",
+        "field": "unit_price",
+        "rows": 3947,
+        "pct_of_file": 0.395
+      },
+      {
+        "anomaly_type": "text_in_numeric",
+        "field": "quantity",
+        "rows": 4025,
+        "pct_of_file": 0.403
+      },
+      {
+        "anomaly_type": "text_in_numeric",
+        "field": "unit_price",
+        "rows": 4026,
+        "pct_of_file": 0.403
+      }
+    ],
+    "info": {
+      "unique_order_ids_created": 990137
+    },
+    "total_anomalous_rows": 75729,
+    "total_anomalous_pct": 7.573
+  },
+  "transactions": {
+    "anomalies": [
+      {
+        "anomaly_type": "case_whitespace",
+        "field": "currency",
+        "rows": 9782,
+        "pct_of_file": 0.978
+      },
+      {
+        "anomaly_type": "case_whitespace",
+        "field": "payment_method",
+        "rows": 9901,
+        "pct_of_file": 0.99
+      },
+      {
+        "anomaly_type": "case_whitespace",
+        "field": "txn_status",
+        "rows": 9979,
+        "pct_of_file": 0.998
+      },
+      {
+        "anomaly_type": "duplicate_exact_row",
+        "field": "*all*",
+        "rows": 4993,
+        "pct_of_file": 0.499
+      },
+      {
+        "anomaly_type": "duplicate_key_conflict",
+        "field": "txn_status,txn_ts",
+        "rows": 4985,
+        "pct_of_file": 0.498
+      },
+      {
+        "anomaly_type": "future_timestamp",
+        "field": "txn_ts",
+        "rows": 2920,
+        "pct_of_file": 0.292
+      },
+      {
+        "anomaly_type": "invalid_status_label",
+        "field": "txn_status",
+        "rows": 2028,
+        "pct_of_file": 0.203
+      },
+      {
+        "anomaly_type": "invalid_timestamp",
+        "field": "txn_ts",
+        "rows": 4021,
+        "pct_of_file": 0.402
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "amount",
+        "rows": 1392,
+        "pct_of_file": 0.139
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "currency",
+        "rows": 1462,
+        "pct_of_file": 0.146
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "order_id",
+        "rows": 1434,
+        "pct_of_file": 0.143
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "payment_method",
+        "rows": 1348,
+        "pct_of_file": 0.135
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "txn_id",
+        "rows": 1395,
+        "pct_of_file": 0.14
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "txn_status",
+        "rows": 1431,
+        "pct_of_file": 0.143
+      },
+      {
+        "anomaly_type": "null_or_blank",
+        "field": "txn_ts",
+        "rows": 1426,
+        "pct_of_file": 0.143
+      },
+      {
+        "anomaly_type": "orphan_order_id",
+        "field": "order_id",
+        "rows": 10216,
+        "pct_of_file": 1.022
+      },
+      {
+        "anomaly_type": "out_of_range_numeric",
+        "field": "amount",
+        "rows": 7008,
+        "pct_of_file": 0.701
+      },
+      {
+        "anomaly_type": "text_in_numeric",
+        "field": "amount",
+        "rows": 8104,
+        "pct_of_file": 0.81
+      },
+      {
+        "anomaly_type": "unsupported_currency",
+        "field": "currency",
+        "rows": 4027,
+        "pct_of_file": 0.403
+      }
+    ],
+    "info": {
+      "unique_txn_ids_created": 990022,
+      "clean_orders_with_a_clean_txn": 836014,
+      "payable_orders": 954105
+    },
+    "total_anomalous_rows": 87852,
+    "total_anomalous_pct": 8.785
+  }
+}

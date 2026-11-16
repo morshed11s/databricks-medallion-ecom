@@ -1,0 +1,38 @@
+# ---- Source data: never commit raw extracts (1M-row synthetic CSVs) ----
+*.csv
+*.csv.gz
+*.parquet
+data/
+generator/output/
+# Allow only small, Gold-only synthetic exports for the Power BI fallback
+!powerbi/gold_exports/*.csv
+
+# ---- Secrets / credentials ----
+.env
+.env.*
+*.pem
+*.key
+.databrickscfg
+**/secrets/
+*token*
+*.pat
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ---- Power BI cache / temp ----
+*.pbix.bak
+~$*
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Assignment brief (instructor material, not part of submission code) ----
+*.pdf
