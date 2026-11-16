@@ -166,7 +166,7 @@ display(spark.sql(f"""
 SELECT _bronze_row_id, quantity, unit_price, order_date, order_status, country
 FROM {t('bronze_orders')}
 WHERE try_cast(quantity AS INT) IS NULL OR try_cast(unit_price AS DECIMAL(12,2)) IS NULL
-   OR try_to_date(order_date, 'yyyy-MM-dd') IS NULL OR order_status <> upper(trim(order_status))
+   OR try_to_timestamp(order_date, 'yyyy-MM-dd') IS NULL OR order_status <> upper(trim(order_status))
 LIMIT 20
 """))
 
