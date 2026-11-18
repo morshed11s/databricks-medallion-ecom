@@ -6,7 +6,7 @@ Bronze → Silver → Gold lakehouse on a Databricks free trial, using reproduci
 generator (seed 42) ─▶ orders.csv / transactions.csv (1,000,000 rows each)
       │ upload
       ▼
-/Volumes/workspace/ecom_poc/raw_files/          landing: unchanged files, checked against manifest sha256
+/Volumes/ecom_catalog/ecom_poc/raw_files/          landing: unchanged files, checked against manifest sha256
       │ 03_bronze (STRING, audit columns, replaceWhere per batch)
       ▼
 bronze_orders · bronze_transactions             lossless: source rows = Bronze rows
@@ -53,14 +53,14 @@ Setup SQL: [`sql/00_setup.sql`](sql/00_setup.sql) (also [`notebooks/01_setup.py`
 
 | Object | Pattern | Example |
 |---|---|---|
-| Catalog | existing writable trial catalog (catalog creation not needed) | `workspace` |
+| Catalog | dedicated project catalog, created by `01_setup` | `ecom_catalog` |
 | Schema | `<domain>_<purpose>` | `ecom_poc` |
-| Landing volume | managed volume `raw_files` | `/Volumes/workspace/ecom_poc/raw_files/` |
+| Landing volume | managed volume `raw_files` | `/Volumes/ecom_catalog/ecom_poc/raw_files/` |
 | Tables | `<layer>_<entity>` | `bronze_orders`, `silver_transactions`, `gold_daily_sales` |
 | Rejected / duplicate outcomes | `silver_<entity>_quarantine` / `_duplicates` | `silver_orders_quarantine` |
 | Reference / ops tables | `ref_<what>`, `ops_<what>` | `ref_fx_rates`, `ops_bronze_load_log` |
 
-Exact raw-file paths: `/Volumes/workspace/ecom_poc/raw_files/orders.csv` and `/Volumes/workspace/ecom_poc/raw_files/transactions.csv`.
+Exact raw-file paths: `/Volumes/ecom_catalog/ecom_poc/raw_files/orders.csv` and `/Volumes/ecom_catalog/ecom_poc/raw_files/transactions.csv`.
 Because the layer is the table prefix, anyone browsing the catalog can see a table's trust level without opening it. The catalog name is a single widget or job parameter (`catalog`), so the project can move to another catalog.
 
 ### Git integration
@@ -80,7 +80,7 @@ Because the layer is the table prefix, anyone browsing the catalog can see a tab
   - Money is `DECIMAL`, so totals don't drift.
   - Dates are `DATE`, so date-range filters match across tools.
 - **Verification SQL is separate from the pipeline** (`sql/`). The landing, Bronze and Silver checks are reproducible queries. The trusted metric queries are the reference for BI cross-checks. [`sql/10_quality_assertions.sql`](sql/10_quality_assertions.sql) re-checks every invariant with `assert_true` and fails loudly.
-- **Names are fully qualified** (`workspace.ecom_poc.<table>`), and the catalog is a single notebook/job parameter.
+- **Names are fully qualified** (`ecom_catalog.ecom_poc.<table>`), and the catalog is a single notebook/job parameter.
 
 ## 3. Synthetic source files
 ### Generator & dirty-data inventory
@@ -110,8 +110,8 @@ Uploaded via **New → Add or upload data → Upload files to a volume**. Reprod
 
 | File | Volume path | Data rows (excl. header) | Bytes | sha256 |
 |---|---|---|---|---|
-| orders.csv | `/Volumes/workspace/ecom_poc/raw_files/orders.csv` | 1,000,000 | 66,468,913 | checked against `generator/manifest.json` by `02_landing_checks` |
-| transactions.csv | `/Volumes/workspace/ecom_poc/raw_files/transactions.csv` | 1,000,000 | 71,233,922 | checked against `generator/manifest.json` by `02_landing_checks` |
+| orders.csv | `/Volumes/ecom_catalog/ecom_poc/raw_files/orders.csv` | 1,000,000 | 66,468,913 | checked against `generator/manifest.json` by `02_landing_checks` |
+| transactions.csv | `/Volumes/ecom_catalog/ecom_poc/raw_files/transactions.csv` | 1,000,000 | 71,233,922 | checked against `generator/manifest.json` by `02_landing_checks` |
 
 ### Why real data, credentials and raw extracts must not be in Git
 Git history is permanent and gets copied to every clone, fork, CI cache and backup. Deleting a file later does not remove it from history.
@@ -309,7 +309,7 @@ Details: [`operations/README.md`](operations/README.md). Job definition: [`opera
 ## 10. Trial limitations & fallbacks
 | Area | Observed | Fallback applied |
 |---|---|---|
-| Catalog creation | Used the existing writable `workspace` catalog (as the brief allows) | Catalog is a parameter; nothing hard-codes it except the SQL helper files |
+| Catalog creation | `01_setup` runs `CREATE CATALOG IF NOT EXISTS ecom_catalog` | If SQL creation is blocked, create it in Catalog Explorer with default storage. The catalog is a parameter; only the SQL helper files hard-code it |
 
 ## 11. Requirement traceability
 Status: **Repo** = implemented and committed. **Run** = needs execution in the trial workspace.
@@ -317,7 +317,7 @@ Status: **Repo** = implemented and committed. **Run** = needs execution in the t
 | Brief requirement | Where it is met | Status |
 |---|---|---|
 | Own-email trial; cloud, region, dates, compute, restrictions; trial vs Free Edition | §2, §10 | Repo done · Run |
-| `ecom_poc` schema + managed `raw_files` volume; naming standard; exact path | §2 · `sql/00_setup.sql` · `notebooks/01_setup` | Done |
+| `ecom_catalog` catalog, `ecom_poc` schema + managed `raw_files` volume; naming standard; exact path | §2 · `sql/00_setup.sql` · `notebooks/01_setup` | Done |
 | Notebook compute + SQL warehouse; ETL vs BI reason; credit saving | §2 | Done |
 | Git folder; repo URL; commit per stage | §2 · `git log` | Done |
 | 1,000,000 rows per file; ≥5 dirty categories; inventory; why small fraction | §3 · `generator/` | Done |
@@ -348,7 +348,7 @@ Status: **Repo** = implemented and committed. **Run** = needs execution in the t
 1. `python generator/generate_data.py`. The output's sha256 must match `generator/manifest.json`.
 2. In Databricks, clone the repo as a Git folder.
 3. Run `notebooks/01_setup`.
-4. Upload both CSVs to `/Volumes/workspace/ecom_poc/raw_files/`.
+4. `01_setup` copies the CSVs from `/Volumes/workspace/ecom_poc/raw_files/` if present; otherwise upload both to `/Volumes/ecom_catalog/ecom_poc/raw_files/`.
 5. Run `02_landing_checks` → `03_bronze` → `04_silver` → `05_gold`, or run the Lakeflow Job.
 6. Build the dashboard, Genie and Power BI from `dashboards/` and `powerbi/`.
 

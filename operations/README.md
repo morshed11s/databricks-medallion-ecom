@@ -12,7 +12,7 @@ landing_checks ──▶ bronze ──▶ silver ──▶ gold
 1. **Jobs & Pipelines → Create → Job**. Name it `ecom_medallion_bronze_silver_gold`.
 2. Add task `landing_checks`: type *Notebook*, source *Workspace*, path to `notebooks/02_landing_checks` in the Git folder, compute **Serverless**.
 3. Add `bronze` (`03_bronze`), `silver` (`04_silver`) and `gold` (`05_gold`). Each one **depends on** the previous task, with *Run if: All succeeded*.
-4. Job parameters: `catalog = workspace`. Job parameters are passed to the notebooks' `catalog` widget.
+4. Job parameters: `catalog = ecom_catalog`. Job parameters are passed to the notebooks' `catalog` widget.
 5. Per task: retries **1**, interval **2 min**, *retry on timeout* off, and the timeouts from the JSON. Max concurrent runs **1**.
 6. Job notifications: **On failure → email** (your own address).
 7. **No schedule/trigger.** Click *Run now* once. If you want to demonstrate a schedule, add one for a single run a few minutes ahead, then **pause or delete it** straight after.
@@ -47,11 +47,11 @@ Reporting users can query Gold but can't see Bronze/Silver (raw and rejected rec
 **Testing:**
 1. Add a second identity you own to the group.
 2. As that identity, run:
-   - `SELECT COUNT(*) FROM workspace.ecom_poc.gold_daily_sales;` succeeds
-   - `SELECT COUNT(*) FROM workspace.ecom_poc.silver_orders;` returns `PERMISSION_DENIED`
-   - `SELECT COUNT(*) FROM workspace.ecom_poc.bronze_transactions;` returns `PERMISSION_DENIED`
-   - `LIST '/Volumes/workspace/ecom_poc/raw_files/';` returns `PERMISSION_DENIED`
-   - `CREATE TABLE workspace.ecom_poc.x (a INT);` returns `PERMISSION_DENIED`
+   - `SELECT COUNT(*) FROM ecom_catalog.ecom_poc.gold_daily_sales;` succeeds
+   - `SELECT COUNT(*) FROM ecom_catalog.ecom_poc.silver_orders;` returns `PERMISSION_DENIED`
+   - `SELECT COUNT(*) FROM ecom_catalog.ecom_poc.bronze_transactions;` returns `PERMISSION_DENIED`
+   - `LIST '/Volumes/ecom_catalog/ecom_poc/raw_files/';` returns `PERMISSION_DENIED`
+   - `CREATE TABLE ecom_catalog.ecom_poc.x (a INT);` returns `PERMISSION_DENIED`
 3. Record the `SHOW GRANTS` output, and repeat it after a job re-run to confirm the Gold grants persist.
 
 If adding users or groups is restricted in the trial, submit `sql/08_grants.sql` as the executable plan with the `SHOW GRANTS` output, and record the restriction in README §10.

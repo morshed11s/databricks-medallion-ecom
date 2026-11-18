@@ -1,4 +1,4 @@
-USE CATALOG workspace;
+USE CATALOG ecom_catalog;
 USE SCHEMA ecom_poc;
 
 SELECT SUM(revenue_usd) AS total_revenue_usd, COUNT_IF(is_revenue_eligible) AS revenue_orders

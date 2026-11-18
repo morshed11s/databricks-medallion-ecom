@@ -1,12 +1,12 @@
 {
   "name": "ecom_medallion_bronze_silver_gold",
-  "description": "Landing checks -> Bronze -> Silver -> Gold for workspace.ecom_poc. Manual trigger only (no schedule).",
+  "description": "Landing checks -> Bronze -> Silver -> Gold for ecom_catalog.ecom_poc. Manual trigger only (no schedule).",
   "max_concurrent_runs": 1,
   "timeout_seconds": 7200,
   "queue": { "enabled": true },
   "performance_target": "STANDARD",
   "parameters": [
-    { "name": "catalog", "default": "workspace" }
+    { "name": "catalog", "default": "ecom_catalog" }
   ],
   "email_notifications": {
     "on_failure": ["<YOUR_EMAIL>"],

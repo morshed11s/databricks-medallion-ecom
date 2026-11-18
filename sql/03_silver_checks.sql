@@ -1,4 +1,4 @@
-USE CATALOG workspace;
+USE CATALOG ecom_catalog;
 USE SCHEMA ecom_poc;
 
 SELECT * FROM ref_dq_rules ORDER BY dataset, field, rule_type;

@@ -1,4 +1,7 @@
-USE CATALOG workspace;
+CREATE CATALOG IF NOT EXISTS ecom_catalog
+  COMMENT 'E-commerce medallion PoC catalog';
+
+USE CATALOG ecom_catalog;
 
 CREATE SCHEMA IF NOT EXISTS ecom_poc
   COMMENT 'E-commerce medallion PoC: bronze/silver/gold tables for synthetic orders and payments';

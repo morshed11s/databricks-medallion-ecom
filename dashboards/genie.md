@@ -4,7 +4,7 @@ Genie Agents is available in this trial workspace (left navigation).
 
 ## Setup
 1. **Genie Agents → New**. Warehouse: the serverless starter warehouse.
-2. **Tables** (Gold only): `gold_fact_orders`, `gold_daily_sales`, `gold_revenue_breakdown`, `gold_payment_success`, `gold_top_customers` in `workspace.ecom_poc`.
+2. **Tables** (Gold only): `gold_fact_orders`, `gold_daily_sales`, `gold_revenue_breakdown`, `gold_payment_success`, `gold_top_customers` in `ecom_catalog.ecom_poc`.
 3. **General instructions:** paste the block below.
 4. **SQL examples (trusted):** add the first three queries from [`sql/06_genie_verification.sql`](../sql/06_genie_verification.sql) with their questions as titles.
 

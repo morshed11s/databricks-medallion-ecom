@@ -10,7 +10,7 @@
 1. In Databricks: **SQL Warehouses → (warehouse) → Connection details**. Copy *Server hostname* and *HTTP path*.
 2. In Power BI Desktop: **Get data → Azure Databricks** (or **Databricks**). Paste the hostname and HTTP path. Data connectivity mode: **Import**.
 3. Authentication: **OAuth / Microsoft Entra ID** if offered, otherwise a **personal access token** with a short lifetime (e.g. 7 days). The token is never saved in the repo. Revoke it when finished (`operations/README.md` cleanup).
-4. Navigator: `workspace → ecom_poc` → select **only** `gold_daily_sales`, `gold_revenue_breakdown`, `gold_payment_success`, `gold_top_customers` → *Load*.
+4. Navigator: `ecom_catalog → ecom_poc` → select **only** `gold_daily_sales`, `gold_revenue_breakdown`, `gold_payment_success`, `gold_top_customers` → *Load*.
 
 ### Import vs DirectQuery
 

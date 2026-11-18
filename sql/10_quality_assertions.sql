@@ -1,9 +1,9 @@
-USE CATALOG workspace;
+USE CATALOG ecom_catalog;
 USE SCHEMA ecom_poc;
 
 WITH src AS (
   SELECT _metadata.file_name AS file_name, COUNT(*) - 1 AS source_rows
-  FROM read_files('/Volumes/workspace/ecom_poc/raw_files/', format => 'text')
+  FROM read_files('/Volumes/ecom_catalog/ecom_poc/raw_files/', format => 'text')
   GROUP BY ALL
 ), layers AS (
   SELECT 'orders' AS dataset, 'orders.csv' AS file_name,

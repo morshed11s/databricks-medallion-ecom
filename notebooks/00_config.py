@@ -1,5 +1,5 @@
 # Databricks notebook source
-dbutils.widgets.text("catalog", "workspace", "Unity Catalog catalog")
+dbutils.widgets.text("catalog", "ecom_catalog", "Unity Catalog catalog")
 CATALOG = dbutils.widgets.get("catalog").strip()
 SCHEMA = "ecom_poc"
 VOLUME = "raw_files"
