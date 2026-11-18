@@ -36,3 +36,6 @@ Thumbs.db
 
 # ---- Assignment brief (instructor material, not part of submission code) ----
 *.pdf
+
+# ---- Unmasked screenshots (may show email / PII); commit only masked copies ----
+evidence/*_unmasked*
