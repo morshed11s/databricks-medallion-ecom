@@ -1,39 +1,4 @@
 # Databricks notebook source
-# MAGIC %md
-# MAGIC # 05 · Gold: business-ready marts
-# MAGIC
-# MAGIC ## Revenue definition (the single definition used by SQL, AI/BI and Power BI)
-# MAGIC **Revenue (USD)** = the order value (`quantity × unit_price`, in USD) of every order that meets **both** conditions:
-# MAGIC 1. `order_status` is **COMPLETED** or **SHIPPED**.
-# MAGIC    - CANCELLED and RETURNED orders earn nothing (cancelled or refunded).
-# MAGIC    - PENDING orders aren't earned yet.
-# MAGIC 2. The order is **fully paid**: the sum of its `SUCCESS` payments, converted to USD, is at least the order value. A 0.05 USD tolerance absorbs FX rounding.
-# MAGIC
-# MAGIC **How payments are treated**
-# MAGIC - **Failed and pending attempts** never count.
-# MAGIC - **REFUNDED** payments don't count toward "paid".
-# MAGIC - **Partial (split) payments** are added up. The order counts once the parts cover its value.
-# MAGIC - **Repeat (duplicate) charges** can't inflate revenue: revenue is the **order value**, not the payment sum. The excess shows up as `overpaid_usd`.
-# MAGIC - **Currency:** EUR and GBP payments are converted with `ref_fx_rates`. Revenue is always reported in **USD**.
-# MAGIC - **Revenue date** = `order_date`.
-# MAGIC
-# MAGIC **Source of truth:** `gold_fact_orders.revenue_usd`, which is built from `silver_orders` (amount) and `silver_transactions` (payment proof).
-# MAGIC Every Gold mart and BI tool **sums this one column**, so the same definition always gives the same total.
-# MAGIC
-# MAGIC **Example**
-# MAGIC | Order | Status | Value | Successful payments | Revenue |
-# MAGIC |---|---|---|---|---|
-# MAGIC | A | COMPLETED | 100.00 | 1 × 100.00 | **100.00** |
-# MAGIC | B | COMPLETED | 100.00 | 50.00 + 50.00 (split) | **100.00** |
-# MAGIC | C | SHIPPED | 100.00 | 100.00 + 100.00 (repeat charge) | **100.00** (overpaid 100.00) |
-# MAGIC | D | COMPLETED | 100.00 | FAILED, then 1 × 100.00 | **100.00** |
-# MAGIC | E | CANCELLED | 100.00 | REFUNDED | **0** |
-# MAGIC | F | COMPLETED | 100.00 | none | **0** (not paid) |
-# MAGIC
-# MAGIC **Avoiding fan-out:** transactions are first **aggregated to one row per order**, then joined to orders (one-to-one). Payment amounts are never multiplied by a many-to-one join.
-
-# COMMAND ----------
-
 # MAGIC %run ./00_config
 
 # COMMAND ----------
@@ -41,11 +6,6 @@
 PAID_TOLERANCE_USD = "0.05"
 spark.sql(f"USE CATALOG `{CATALOG}`")
 spark.sql(f"USE SCHEMA `{SCHEMA}`")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## gold_fact_orders: one row per order, carries `revenue_usd`
 
 # COMMAND ----------
 
@@ -77,11 +37,6 @@ SELECT o.order_id, o.customer_id, o.order_date, o.category, o.country, o.order_s
 FROM silver_orders o
 LEFT JOIN pay p ON p.order_id = o.order_id
 """)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## The four required marts
 
 # COMMAND ----------
 
@@ -140,12 +95,6 @@ GROUP BY customer_id
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Documentation: grain, key and metric assumptions
-# MAGIC Descriptions are stored in Unity Catalog, so they appear in Catalog Explorer, Genie and the BI tools. They tell readers, for example, that `cancellation_rate` has to be re-aggregated as Σcancelled / Σorders (never averaged), and that `revenue_usd` already excludes unpaid and cancelled orders. That prevents the most common misreadings.
-
-# COMMAND ----------
-
 document_table("gold_fact_orders",
     "Gold order fact. Grain: one row per order. Key: order_id. Source of truth for revenue: SUM(revenue_usd).",
     {"order_id": "Unique key", "order_amount_usd": "Order value = quantity * unit_price (USD)",
@@ -190,11 +139,6 @@ for table, cols in [("gold_fact_orders", ["order_id"]), ("gold_daily_sales", ["o
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Verification: unique grain, no fan-out, identical revenue across marts
-
-# COMMAND ----------
-
 checks = spark.sql("""
 SELECT 'gold_fact_orders' AS table_name, COUNT(*) AS rows, COUNT(DISTINCT order_id) AS distinct_keys,
        (SELECT COUNT(*) FROM silver_orders) AS expected_rows FROM gold_fact_orders
@@ -218,11 +162,6 @@ display(rev)
 r = rev.first()
 assert r["fact_orders"] == r["daily_sales"] == r["revenue_breakdown"] == r["top_customers"], "Revenue differs between marts"
 print(f"Total revenue identical in all marts: {r['fact_orders']:,} USD")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Evidence: row counts and sample output
 
 # COMMAND ----------
 
@@ -251,11 +190,6 @@ display(spark.sql("""SELECT payment_method, SUM(attempts) AS attempts, SUM(succe
 # COMMAND ----------
 
 display(spark.sql("SELECT * FROM gold_top_customers ORDER BY spend_rank LIMIT 10"))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Revenue definition illustrated with real orders (one example per case)
 
 # COMMAND ----------
 

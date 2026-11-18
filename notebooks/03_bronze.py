@@ -1,25 +1,4 @@
 # Databricks notebook source
-# MAGIC %md
-# MAGIC # 03 · Bronze: lossless ingestion
-# MAGIC Loads each landed CSV into its own Delta table: **`bronze_orders`** and **`bronze_transactions`**.
-# MAGIC
-# MAGIC **Design**
-# MAGIC - **All source columns are STRING.** The schema is explicit and nothing is inferred, so values like `"two"`, `"12,50"`, `"2026-02-30"` and `" completed "` arrive exactly as sent.
-# MAGIC - **Why keep malformed data in Bronze?** Bronze is the evidence layer. Rejecting rows while loading would lose them for good: you couldn't count them, explain them, send them back to the source system, or reprocess them after a rule changes. Bronze answers "what did we receive?". Silver decides "what do we trust?", and records every rejection with a reason.
-# MAGIC - **Idempotent loads.** `_batch_id` comes from the file's SHA-256 content hash. The write uses Delta `replaceWhere _batch_id = …`, so re-running with the same file **replaces** that batch instead of appending it again.
-# MAGIC
-# MAGIC **Audit columns**
-# MAGIC | Column | Meaning |
-# MAGIC |---|---|
-# MAGIC | `_ingested_at` | UTC timestamp of the load run. Shows when the data entered the lakehouse. |
-# MAGIC | `_source_file` | Full volume path of the CSV the row came from (lineage back to the landing zone). |
-# MAGIC | `_source_line` | 1-based data-row number in that file (the header is not counted). Points to the exact raw line and gives a stable order. |
-# MAGIC | `_batch_id` | `<file>:<first 16 hex chars of the file's sha256>`. The same content always gets the same ID, which is the key for idempotent reloads and reconciliation. |
-# MAGIC | `_row_hash` | SHA-256 of all source columns, with a separator and a null marker. Equal hashes mean exact duplicate rows. Also used to spot changes. |
-# MAGIC | `_bronze_row_id` | `<_batch_id>#<_source_line>`. A unique, stable row identifier kept through Silver (accepted, quarantined and duplicate outcomes). |
-
-# COMMAND ----------
-
 # MAGIC %run ./00_config
 
 # COMMAND ----------
@@ -139,11 +118,6 @@ print("Lossless: source data-row count equals Bronze row count for every dataset
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Evidence: schema, sample rows and audit data
-
-# COMMAND ----------
-
 display(spark.sql(f"DESCRIBE TABLE {t('bronze_orders')}"))
 
 # COMMAND ----------
@@ -156,11 +130,6 @@ display(spark.table(f"{CATALOG}.{SCHEMA}.bronze_transactions").orderBy("_source_
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Evidence: malformed values are kept as they arrived (examples)
-
-# COMMAND ----------
-
 display(spark.sql(f"""
 SELECT _bronze_row_id, quantity, unit_price, order_date, order_status, country
 FROM {t('bronze_orders')}
@@ -168,12 +137,6 @@ WHERE try_cast(quantity AS INT) IS NULL OR try_cast(unit_price AS DECIMAL(12,2))
    OR try_to_timestamp(order_date, 'yyyy-MM-dd') IS NULL OR order_status <> upper(trim(order_status))
 LIMIT 20
 """))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Evidence: idempotency
-# MAGIC Run this notebook a **second time**. The counts above stay at exactly 1,000,000 per table, and `DESCRIBE HISTORY` shows a second `WRITE` with `replaceWhere` (mode Overwrite), not an append.
 
 # COMMAND ----------
 

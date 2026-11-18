@@ -1,31 +1,4 @@
 # Databricks notebook source
-# MAGIC %md
-# MAGIC # 04 · Silver: cleaning, validation, deduplication and reconciliation
-# MAGIC
-# MAGIC Every Bronze row ends up in **exactly one** outcome:
-# MAGIC
-# MAGIC | Outcome | Orders | Transactions |
-# MAGIC |---|---|---|
-# MAGIC | Accepted (trusted, typed, one row per key) | `silver_orders` | `silver_transactions` |
-# MAGIC | Quarantined (failed at least one rule, with `rejection_reasons`) | `silver_orders_quarantine` | `silver_transactions_quarantine` |
-# MAGIC | Duplicate loser (valid, but another row won the key) | `silver_orders_duplicates` | `silver_transactions_duplicates` |
-# MAGIC
-# MAGIC **Processing precedence**
-# MAGIC 1. **Standardise:** trim spaces, upper-case codes, and treat `''`, `NULL` and `None` as missing. These cosmetic problems are fixed, not rejected.
-# MAGIC 2. **Safe parsing:** `try_cast` and `try_to_timestamp` with strict formats. A string that can't be parsed becomes `NULL` in the parsed column, the original string is kept, and the row fails a *type* rule. It is never cast to a wrong value and never fails the job.
-# MAGIC 3. **Validate:** every rule is evaluated and **all** failures are recorded in `rejection_reasons`. Any failure means quarantine.
-# MAGIC 4. **Deduplicate valid rows only:** one winner per business key, decided deterministically. All other rows are duplicate losers.
-# MAGIC
-# MAGIC Because validation runs before deduplication, a row that is both invalid and a duplicate is counted **once, in quarantine**. The three outcomes therefore split Bronze exactly:
-# MAGIC **Bronze = accepted + quarantined + duplicate losers.** `_bronze_row_id` is kept in every outcome.
-# MAGIC
-# MAGIC **Keep-one rules**
-# MAGIC - Orders (`order_id`): the **latest line in the extract** wins (highest `_source_line`). Later lines represent later versions of the order.
-# MAGIC - Transactions (`txn_id`): the **latest `txn_ts`** wins, which is the latest status of the payment. Ties go to the highest `_source_line`.
-# MAGIC - Each loser is labelled `exact_row_duplicate` (same `_row_hash` as the winner, so every raw field is identical) or `key_conflict` (same key, different content).
-
-# COMMAND ----------
-
 # MAGIC %run ./00_config
 
 # COMMAND ----------
@@ -67,11 +40,6 @@ def missing_rules(fields):
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Reference data: supported currencies and FX rates
-
-# COMMAND ----------
-
 spark.createDataFrame(FX_TO_USD, "currency string, usd_per_unit string") \
     .select("currency", F.col("usd_per_unit").cast("decimal(12,6)").alias("usd_per_unit")) \
     .write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(tn("ref_fx_rates"))
@@ -79,11 +47,6 @@ document_table("ref_fx_rates",
                "Supported payment currencies and fixed PoC conversion rates to USD. Grain: one row per currency.",
                {"currency": "ISO 4217 code (supported set)", "usd_per_unit": "USD value of 1 unit of currency"})
 display(spark.table(tn("ref_fx_rates")))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Orders: standardise, parse, validate
 
 # COMMAND ----------
 
@@ -128,11 +91,6 @@ o = o.withColumn("rejection_reasons", reasons_col(ORDER_RULES))
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Orders: deterministic deduplication and outcome tables
-
-# COMMAND ----------
-
 def split_outcomes(df, key, order_cols):
     valid = df.where(F.size("rejection_reasons") == 0)
     w = Window.partitionBy(key).orderBy(*order_cols)
@@ -174,11 +132,6 @@ write(order_losers.select(*ORDER_RAW, c("c_order_id").alias("dedup_key"), "dupli
                           "winner_bronze_row_id", F.lit("latest _source_line wins").alias("keep_rule"),
                           *LINEAGE, now.alias("_deduplicated_at")),
       "silver_orders_duplicates")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Transactions: standardise, parse, validate (including the orphan check against accepted orders)
 
 # COMMAND ----------
 
@@ -248,21 +201,11 @@ write(txn_losers.select(*TXN_RAW, c("c_txn_id").alias("dedup_key"), "duplicate_t
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Rules matrix (stored as `ref_dq_rules`)
-
-# COMMAND ----------
-
 rules_rows = [("orders", rid, fld, typ, desc) for rid, fld, typ, desc, _ in ORDER_RULES] + \
              [("transactions", rid, fld, typ, desc) for rid, fld, typ, desc, _ in TXN_RULES]
 write(spark.createDataFrame(rules_rows, "dataset string, rejection_reason string, field string, rule_type string, rule string"),
       "ref_dq_rules")
 display(spark.table(tn("ref_dq_rules")))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Table and column documentation
 
 # COMMAND ----------
 
@@ -301,11 +244,6 @@ document_table("ref_dq_rules", "Business-rule matrix applied in Silver. Grain: d
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Reconciliation: Bronze = accepted + quarantined + duplicate losers, with no overlap
-
-# COMMAND ----------
-
 def reconcile(ds):
     ids = lambda name: spark.table(tn(name)).select("_bronze_row_id")
     bronze = ids(f"bronze_{ds}")
@@ -336,16 +274,6 @@ print("Reconciled: every Bronze row has exactly one Silver outcome, for both dat
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Cross-check with the generator's dirty-data inventory
-# MAGIC Expected values come from `generator/dirty_data_report.md`:
-# MAGIC - Quarantine = all anomalies − fixable case/whitespace − duplicates.
-# MAGIC - Orders: 75,729 − 29,834 − 9,863 = **36,032**. Transactions: 87,852 − 29,662 − 9,978 = **48,212**.
-# MAGIC
-# MAGIC A mismatch here is shown, not raised as an error. It would mean a rule is stricter or looser than the injected anomalies.
-
-# COMMAND ----------
-
 expected = {"orders": (954_105, 36_032, 9_863), "transactions": (941_810, 48_212, 9_978)}
 rows = []
 for r in recon.collect():
@@ -354,11 +282,6 @@ for r in recon.collect():
                                 (r["accepted"], r["quarantined"], r["duplicate_losers"])):
         rows.append((r["dataset"], metric, exp, act, exp == act))
 display(spark.createDataFrame(rows, "dataset string, metric string, expected_from_generator long, actual long, match boolean"))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Evidence: row counts by rule
 
 # COMMAND ----------
 
@@ -373,11 +296,6 @@ display(rule_counts)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Evidence: before/after conversion examples
-
-# COMMAND ----------
-
 display(o.where("order_status <> c_order_status OR category <> p_category OR country <> c_country "
                 "OR (c_quantity IS NOT NULL AND p_quantity IS NULL) OR (c_order_date IS NOT NULL AND p_order_date IS NULL)")
          .select("_bronze_row_id", "order_status", "c_order_status", "category", "p_category", "country", "c_country",
@@ -386,21 +304,11 @@ display(o.where("order_status <> c_order_status OR category <> p_category OR cou
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Evidence: quarantine samples
-
-# COMMAND ----------
-
 display(spark.table(tn("silver_orders_quarantine")).select("_bronze_row_id", *ORDER_RAW, "rejection_reasons").limit(15))
 
 # COMMAND ----------
 
 display(spark.table(tn("silver_transactions_quarantine")).select("_bronze_row_id", *TXN_RAW, "rejection_reasons").limit(15))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Evidence: duplicate winners and losers side by side
 
 # COMMAND ----------
 

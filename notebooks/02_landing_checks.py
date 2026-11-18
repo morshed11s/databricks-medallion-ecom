@@ -1,14 +1,4 @@
 # Databricks notebook source
-# MAGIC %md
-# MAGIC # 02 · Landing checks: are the files exactly what was generated?
-# MAGIC For each CSV in the volume, this notebook records:
-# MAGIC - the path, size in bytes, exact data-row count (excluding the header) and SHA-256
-# MAGIC - a comparison with `generator/manifest.json`, which proves the upload was lossless and unchanged
-# MAGIC
-# MAGIC Results are appended to `ops_landing_file_log`. Bronze uses this log later for its source = Bronze reconciliation.
-
-# COMMAND ----------
-
 # MAGIC %run ./00_config
 
 # COMMAND ----------
@@ -70,11 +60,6 @@ landing.write.mode("append").saveAsTable(t("ops_landing_file_log").replace("`", 
 assert len(results) == 2, f"Expected 2 CSV files in {RAW_PATH}, found {len(results)}"
 assert all(r[8] for r in results), "A landed file does not match the generator manifest!"
 print("Both files landed unchanged: bytes, row counts and SHA-256 match the manifest.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### The same row count in pure SQL (reproducible in the SQL editor)
 
 # COMMAND ----------
 

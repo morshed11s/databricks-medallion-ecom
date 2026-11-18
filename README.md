@@ -160,7 +160,7 @@ Notebook: [`notebooks/04_silver.py`](notebooks/04_silver.py). Checks: [`sql/03_s
 Because validation comes first, a row that is both invalid and a duplicate counts once, in quarantine. That makes the three outcomes a true partition of Bronze.
 
 ### Safe type conversion
-**What happens to unparseable strings?** `try_cast('two' AS INT)` returns **NULL** instead of an error, so the job never crashes on bad data and never stores a wrong value. Silver keeps the original string next to the parsed value. A "present but parsed to NULL" value fails the matching *type* rule (e.g. `invalid_quantity`), and the row goes to quarantine with the raw text intact. Before/after examples are in the notebook's "before/after conversion" cell.
+**What happens to unparseable strings?** `try_cast('two' AS INT)` returns **NULL** instead of an error, so the job never crashes on bad data and never stores a wrong value. Silver keeps the original string next to the parsed value. A "present but parsed to NULL" value fails the matching *type* rule (e.g. `invalid_quantity`), and the row goes to quarantine with the raw text intact. Before/after examples are displayed by `notebooks/04_silver`.
 
 ### Business-rule matrix
 Stored as table `ref_dq_rules`. Row counts per rule are in `ops_silver_rule_counts`.
