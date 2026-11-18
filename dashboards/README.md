@@ -7,7 +7,6 @@
 | Genie Agent setup and question checks | [`dashboards/genie.md`](genie.md) |
 | Genie verification SQL | [`sql/06_genie_verification.sql`](../sql/06_genie_verification.sql) |
 | Exported dashboard definition | `dashboards/ecom_sales_overview.lvdash.json` (export after building: ⋮ → *Export*) |
-| Screenshots | `evidence/14_aibi_dashboard.png`, `evidence/15–17_genie_*.png` |
 
 Dashboard link: ⟨paste the published dashboard URL here⟩
 
@@ -53,4 +52,4 @@ Notes shown as a text widget on the dashboard:
 Set the date filter to **2026-01-01 → 2026-06-30**, clear Category/Country and read K1. It must equal query R2 in [`sql/04_gold_metrics.sql`](../sql/04_gold_metrics.sql) and the Power BI card (README §8).
 
 ### 5. Publish & share
-*Publish* with the warehouse's embedded credentials and share with the reporting group (`ecom_reporting`, see `operations/`). If sharing is restricted in the trial, export the `.lvdash.json` and a PDF/screenshot instead, and record it in README §10.
+*Publish* with the warehouse's embedded credentials and share with the reporting group (`ecom_reporting`, see `operations/`). If sharing is restricted in the trial, export the `.lvdash.json` and a PDF instead, and record it in README §10.

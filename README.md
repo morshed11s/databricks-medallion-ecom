@@ -2,7 +2,7 @@
 
 Bronze → Silver → Gold lakehouse on a Databricks free trial, using reproducible synthetic order and payment data.
 
-> All screenshots, row counts and links in this repository come from my own trial workspace. Values marked ⟨…⟩ are filled in from the actual run. Nothing is invented.
+> All row counts and links in this repository come from my own trial workspace. Values marked ⟨…⟩ are filled in from the actual run. Nothing is invented.
 
 ```
 generator (seed 42) ─▶ orders.csv / transactions.csv (1,000,000 rows each)
@@ -40,7 +40,6 @@ An e-commerce company receives daily CSV extracts of orders and payment transact
 | Credits at start / at submission | ⟨$400⟩ / ⟨…⟩, see `operations/README.md` §3 |
 | ETL compute | Serverless notebook compute |
 | BI compute | *Serverless Starter Warehouse* (SQL warehouse, smallest size, auto-stop 10 min) |
-| Evidence | `evidence/03_workspace_home_trial.png`, `evidence/05_compute_sql_warehouse.png` |
 
 **Trial vs Free Edition.**
 - **Free Edition** is a permanently free, quota-limited, serverless-only workspace for learning. It has no credits, no account console and no upgrade path, and several enterprise features are limited or unavailable.
@@ -55,7 +54,7 @@ An e-commerce company receives daily CSV extracts of orders and payment transact
 **Observed restrictions:** see §10.
 
 ### Unity Catalog setup & naming standard
-Setup SQL: [`sql/00_setup.sql`](sql/00_setup.sql) (also [`notebooks/01_setup.py`](notebooks/01_setup.py)). Evidence: `evidence/02_catalog.png`.
+Setup SQL: [`sql/00_setup.sql`](sql/00_setup.sql) (also [`notebooks/01_setup.py`](notebooks/01_setup.py)).
 
 | Object | Pattern | Example |
 |---|---|---|
@@ -70,7 +69,7 @@ Exact raw-file paths: `/Volumes/workspace/ecom_poc/raw_files/orders.csv` and `/V
 Because the layer is the table prefix, anyone browsing the catalog can see a table's trust level without opening it. The catalog name is a single widget or job parameter (`catalog`), so the project can move to another catalog.
 
 ### Git integration
-- Repository: <https://github.com/morshed11s/databricks-medallion-ecom>. Connected as a **Databricks Git folder** (`evidence/01_git_folder.png`).
+- Repository: <https://github.com/morshed11s/databricks-medallion-ecom>. Connected as a **Databricks Git folder**.
 - There is one commit per project stage (scaffold/generator → setup → Bronze → Silver/Gold → AI/BI → Power BI → operations → README); see `git log`.
 - Notebooks are stored in Databricks source format (`.py`), so diffs are reviewable.
 - Integration limitations: ⟨none / describe⟩.
@@ -113,7 +112,7 @@ Because the layer is the table prefix, anyone browsing the catalog can see a tab
 4. *Analytics stay useful.* About 95 % of orders survive, so trends and breakdowns remain meaningful.
 
 ### Upload: row counts, bytes, volume paths
-Uploaded via **New → Add or upload data → Upload files to a volume** (`evidence/04_volume_upload.png`). Reproducible counts: [`sql/01_landing_row_counts.sql`](sql/01_landing_row_counts.sql) and [`notebooks/02_landing_checks.py`](notebooks/02_landing_checks.py), which also compares sha256 with the manifest and logs to `ops_landing_file_log`.
+Uploaded via **New → Add or upload data → Upload files to a volume**. Reproducible counts: [`sql/01_landing_row_counts.sql`](sql/01_landing_row_counts.sql) and [`notebooks/02_landing_checks.py`](notebooks/02_landing_checks.py), which also compares sha256 with the manifest and logs to `ops_landing_file_log`.
 
 | File | Volume path | Data rows (excl. header) | Bytes | sha256 matches manifest |
 |---|---|---|---|---|
@@ -126,7 +125,7 @@ Git history is permanent and gets copied to every clone, fork, CI cache and back
 - **Credentials** pushed to a remote are scraped by bots within minutes and can be used to read data or run up compute bills.
 - **Raw extracts** are large, are often sensitive, and belong in governed storage (a UC volume) with access control and audit logs, not in version control. Git is for code and small metadata.
 
-Controls applied here: [`.gitignore`](.gitignore) excludes `*.csv`, `*.parquet`, `.env`, `*token*`, `.databrickscfg` and unmasked screenshots. Only synthetic data is used, and screenshots are masked (e.g. the owner email in `02_catalog.png`).
+Controls applied here: [`.gitignore`](.gitignore) excludes `*.csv`, `*.parquet`, `.env`, `*token*` and `.databrickscfg`, and only synthetic data is used.
 
 **Minimum production controls:**
 - secret scanning with push protection on the Git host, plus a pre-commit scanner (e.g. gitleaks);
@@ -137,7 +136,7 @@ Controls applied here: [`.gitignore`](.gitignore) excludes `*.csv`, `*.parquet`,
 - a documented process to rotate any credential that is ever exposed.
 
 ## 4. Bronze — lossless ingestion
-Notebook: [`notebooks/03_bronze.py`](notebooks/03_bronze.py). Checks: [`sql/02_bronze_checks.sql`](sql/02_bronze_checks.sql). Evidence: `evidence/07_bronze_schema.png`, `08_bronze_lossless.png`.
+Notebook: [`notebooks/03_bronze.py`](notebooks/03_bronze.py). Checks: [`sql/02_bronze_checks.sql`](sql/02_bronze_checks.sql).
 
 - **All source fields are STRING with an explicit schema** (`inferSchema=false`). `"two"`, `"12,50"`, `"2026-02-30"` and `" completed "` arrive exactly as sent. A structurally broken line fails the load (`FAILFAST`) instead of being silently dropped.
 - **Why malformed data belongs in Bronze:** Bronze answers *"what did we receive?"*. Rejecting rows on load would destroy the evidence. You could no longer count bad rows, explain them, return them to the source owner, or reprocess them after a rule changes. Deciding *"what do we trust?"* is Silver's job, and Silver records every rejection with a reason.
@@ -157,7 +156,7 @@ Result: orders ⟨1,000,000 = 1,000,000⟩, transactions ⟨1,000,000 = 1,000,00
 **Idempotent re-runs:** the write is a Delta overwrite with `replaceWhere _batch_id = '<this batch>'`. Re-running with the same file *replaces* that batch instead of appending it again, so a second run leaves the count at 1,000,000 (shown by the second row in `ops_bronze_load_log`). A file with *different* content gets a new `_batch_id` and is loaded as a new batch, as it should be.
 
 ## 5. Silver — cleaning, validation & reconciliation
-Notebook: [`notebooks/04_silver.py`](notebooks/04_silver.py). Checks: [`sql/03_silver_checks.sql`](sql/03_silver_checks.sql). Evidence: `evidence/09–11_*.png`.
+Notebook: [`notebooks/04_silver.py`](notebooks/04_silver.py). Checks: [`sql/03_silver_checks.sql`](sql/03_silver_checks.sql).
 
 ### Processing precedence
 1. **Standardise:** trim; upper-case codes; `''`, `NULL` and `None` → missing. Case and whitespace problems are *fixed*, not rejected.
@@ -171,7 +170,7 @@ Because validation comes first, a row that is both invalid and a duplicate count
 **What happens to unparseable strings?** `try_cast('two' AS INT)` returns **NULL** instead of an error, so the job never crashes on bad data and never stores a wrong value. Silver keeps the original string next to the parsed value. A "present but parsed to NULL" value fails the matching *type* rule (e.g. `invalid_quantity`), and the row goes to quarantine with the raw text intact. Before/after examples are in the notebook's "before/after conversion" cell.
 
 ### Business-rule matrix
-Stored as table `ref_dq_rules`. Row counts per rule are in `ops_silver_rule_counts` (⟨`evidence/10_silver_rule_counts.png`⟩).
+Stored as table `ref_dq_rules`. Row counts per rule are in `ops_silver_rule_counts`.
 
 | Dataset | Rule id | Field | Type | Rule |
 |---|---|---|---|---|
@@ -252,9 +251,9 @@ Notebook: [`notebooks/05_gold.py`](notebooks/05_gold.py). Metric SQL: [`sql/04_g
 | `gold_payment_success` | payment day × method | `(txn_date, payment_method)` | ⟨ ⟩ | `success_rate = SUCCESS/(SUCCESS+FAILED)`; PENDING (not final) and REFUNDED excluded |
 | `gold_top_customers` | customer (lifetime) | `customer_id` | ⟨ ⟩ | revenue, AOV, `spend_rank` (ties → customer_id); not date-filterable |
 
-Total revenue (all dates): ⟨ ⟩ USD. Sample output: `evidence/12_gold_checks.png`.
+Total revenue (all dates): ⟨ ⟩ USD. Row counts and sample output are displayed by `notebooks/05_gold`.
 
-**Documentation:** table and column comments are written to Unity Catalog (`COMMENT ON TABLE` / `ALTER COLUMN … COMMENT`), and informational primary keys are declared (`evidence/13_gold_catalog_comments.png`). The comments show up in Catalog Explorer, Genie and BI tools, and they prevent the usual misreadings:
+**Documentation:** table and column comments are written to Unity Catalog (`COMMENT ON TABLE` / `ALTER COLUMN … COMMENT`), and informational primary keys are declared. The comments show up in Catalog Explorer, Genie and BI tools, and they prevent the usual misreadings:
 - averaging a stored rate instead of re-aggregating it;
 - adding `paid_usd` instead of `revenue_usd`;
 - filtering the lifetime customer ranking by date;
@@ -269,7 +268,7 @@ Spec and dataset SQL: [`dashboards/README.md`](dashboards/README.md), [`sql/05_d
 - **Top-customer table.**
 - **Shared filters:** a global **date range** (mapped to `order_date` / `txn_date`) plus category and country.
 
-Link: ⟨URL⟩. Screenshot: `evidence/14_aibi_dashboard.png`.
+Link: ⟨URL⟩.
 
 ### Genie Agent
 Setup, instructions and question checks: [`dashboards/genie.md`](dashboards/genie.md). Verification SQL: [`sql/06_genie_verification.sql`](sql/06_genie_verification.sql).
@@ -315,7 +314,7 @@ Details: [`operations/README.md`](operations/README.md). Job definition: [`opera
   - No retry for landing checks.
   - Timeouts, max 1 concurrent run, failure email.
   - **No schedule.**
-- **Successful run:** ⟨run id, duration⟩. Evidence: `evidence/21–23_*.png`.
+- **Successful run:** ⟨run id, duration⟩.
 - **Why Gold stops after a failed dependency:** the default *Run if = All succeeded* marks Gold *Upstream failed*. Gold therefore never republishes marts from incomplete or unreconciled Silver tables, and the last good Gold stays in place for the dashboards.
 - **Least privilege:** group `ecom_reporting` gets USE CATALOG, USE SCHEMA, SELECT on the five Gold tables only, and *Can use* on the warehouse. It gets nothing on Bronze, Silver, ops tables or the raw volume. Testing: as a group member, a Gold query succeeds and a Silver/Bronze/volume access returns `PERMISSION_DENIED`. Status: ⟨executed / plan only⟩.
 - **Cleanup:** stop the warehouse, confirm no schedules, revoke the Power BI token, export the dashboard and `.pbix`, record credits, and push all commits. Checklist in `operations/README.md` §3.
@@ -332,37 +331,37 @@ Details: [`operations/README.md`](operations/README.md). Job definition: [`opera
 | Other | ⟨ ⟩ | ⟨ ⟩ |
 
 ## 11. Requirement traceability
-Status: **Repo** = implemented and committed. **Run** = needs execution or a screenshot from the trial workspace (see `evidence/README.md`).
+Status: **Repo** = implemented and committed. **Run** = needs execution in the trial workspace.
 
 | Brief requirement | Where it is met | Status |
 |---|---|---|
-| Own-email trial; cloud, region, dates, compute, restrictions; trial vs Free Edition | §2, §10 · `evidence/03` | Repo text ✓ · Run: fill values + screenshot |
-| `ecom_poc` schema + managed `raw_files` volume; naming standard; exact path | §2 · `sql/00_setup.sql` · `notebooks/01_setup` · `evidence/02` | ✓ |
-| Notebook compute + SQL warehouse; ETL vs BI reason; credit saving | §2 · `evidence/05` | Repo ✓ · Run: screenshot |
-| Git folder; repo URL; commit per stage | §2 · `git log` · `evidence/01` | ✓ |
+| Own-email trial; cloud, region, dates, compute, restrictions; trial vs Free Edition | §2, §10 | Repo text ✓ · Run: fill values |
+| `ecom_poc` schema + managed `raw_files` volume; naming standard; exact path | §2 · `sql/00_setup.sql` · `notebooks/01_setup` | ✓ |
+| Notebook compute + SQL warehouse; ETL vs BI reason; credit saving | §2 | ✓ |
+| Git folder; repo URL; commit per stage | §2 · `git log` | ✓ |
 | 1,000,000 rows per file; ≥5 dirty categories; inventory; why small fraction | §3 · `generator/` | ✓ |
-| Upload; exact rows, bytes, path; reproducible count | §3 · `sql/01` · `notebooks/02` · `evidence/04, 06` | Repo ✓ · Run |
+| Upload; exact rows, bytes, path; reproducible count | §3 · `sql/01` · `notebooks/02` | Repo ✓ · Run |
 | Why no real data / credentials / extracts in Git; production controls; `.gitignore` | §3 · `.gitignore` | ✓ |
-| Bronze: one Delta table per CSV, all STRING, no inference; why keep malformed rows | §4 · `notebooks/03` · `evidence/07` | Repo ✓ · Run |
+| Bronze: one Delta table per CSV, all STRING, no inference; why keep malformed rows | §4 · `notebooks/03` | Repo ✓ · Run |
 | Audit fields `_ingested_at`, `_source_file`, `_batch_id`, `_row_hash` explained | §4 | ✓ |
-| Lossless source = Bronze; idempotent re-run | §4 · `ops_bronze_load_log` · `sql/02` · `evidence/08` | Repo ✓ · Run (run Bronze twice) |
+| Lossless source = Bronze; idempotent re-run | §4 · `ops_bronze_load_log` · `sql/02` | Repo ✓ · Run (run Bronze twice) |
 | Safe parsing (`try_cast`); what happens to unparseable strings; before/after | §5 · `notebooks/04` | Repo ✓ · Run |
-| Rule matrix (ranges, mandatory, statuses, currencies, non-future, orphans); counts by rule | §5 · `ref_dq_rules` · `ops_silver_rule_counts` · `evidence/10` | Repo ✓ · Run |
-| Deterministic dedup; keep-one rule; exact rows vs key conflicts; winners/losers | §5 · `notebooks/04` · `sql/03` · `evidence/11` | Repo ✓ · Run |
-| Quarantine with `rejection_reasons`; Bronze = accepted + quarantined + losers, no overlap | §5 · `ops_silver_reconciliation` · `sql/03`, `sql/10` · `evidence/09` | Repo ✓ · Run |
+| Rule matrix (ranges, mandatory, statuses, currencies, non-future, orphans); counts by rule | §5 · `ref_dq_rules` · `ops_silver_rule_counts` | Repo ✓ · Run |
+| Deterministic dedup; keep-one rule; exact rows vs key conflicts; winners/losers | §5 · `notebooks/04` · `sql/03` | Repo ✓ · Run |
+| Quarantine with `rejection_reasons`; Bronze = accepted + quarantined + losers, no overlap | §5 · `ops_silver_reconciliation` · `sql/03`, `sql/10` | Repo ✓ · Run |
 | Revenue definition (statuses, currency, refunds, partial/repeat payments, source of truth) + example | §6 · `notebooks/05` | ✓ |
-| ≥4 Gold datasets; no fan-out; table list, row counts, samples | §6 · `notebooks/05` · `evidence/12` | Repo ✓ · Run |
-| Table/column descriptions; grain, key, assumptions; why it prevents misreading | §6 · UC comments · `evidence/13` | Repo ✓ · Run |
-| AI/BI dashboard: ≥4 KPIs, 1 trend, 2 breakdowns, 1 shared filter; link or export | §7 · `dashboards/README.md` · `evidence/14` | Spec ✓ · Run: build, link/export |
-| Genie: 3 questions cross-checked with SQL, or documented fallback | §7 · `dashboards/genie.md` · `sql/06` · `evidence/15–17` | Spec ✓ · Run |
-| Power BI native connector, Import; Import vs DirectQuery; masked connection screenshot | §8 · `powerbi/README.md` · `evidence/18` | Repo ✓ · Run |
-| ≥4 measures; one-page report (KPI cards, trend, category chart, slicers); `.pbix` | §8 · `powerbi/measures.dax` · `evidence/19` | Spec ✓ · Run: build `.pbix` |
-| Same revenue in SQL, AI/BI and Power BI under identical filters; mismatch diagnosis | §8 · `sql/07` · `evidence/20` | Repo ✓ · Run: fill table |
-| Lakeflow Job Bronze → Silver → Gold; dependencies, retries, failure notification; one successful run; schedule disabled; why Gold stops | §9 · `operations/` · `evidence/21–23` | Repo ✓ · Run |
-| Least-privilege Gold-only access; executable grants; test plan | §9 · `sql/08` · `evidence/24` | Repo ✓ · Run |
-| Cleanup: stop warehouse, disable schedules, check credits, export before expiry | `operations/README.md` §3 · `sql/09` · `evidence/25` | Repo ✓ · Run |
+| ≥4 Gold datasets; no fan-out; table list, row counts, samples | §6 · `notebooks/05` | Repo ✓ · Run |
+| Table/column descriptions; grain, key, assumptions; why it prevents misreading | §6 · UC comments | Repo ✓ · Run |
+| AI/BI dashboard: ≥4 KPIs, 1 trend, 2 breakdowns, 1 shared filter; link or export | §7 · `dashboards/README.md` | Spec ✓ · Run: build, link/export |
+| Genie: 3 questions cross-checked with SQL, or documented fallback | §7 · `dashboards/genie.md` · `sql/06` | Spec ✓ · Run |
+| Power BI native connector, Import; Import vs DirectQuery; connection settings (secrets masked) | §8 · `powerbi/README.md` | Repo ✓ · Run |
+| ≥4 measures; one-page report (KPI cards, trend, category chart, slicers); `.pbix` | §8 · `powerbi/measures.dax` | Spec ✓ · Run: build `.pbix` |
+| Same revenue in SQL, AI/BI and Power BI under identical filters; mismatch diagnosis | §8 · `sql/07` | Repo ✓ · Run: fill table |
+| Lakeflow Job Bronze → Silver → Gold; dependencies, retries, failure notification; one successful run; schedule disabled; why Gold stops | §9 · `operations/` | Repo ✓ · Run |
+| Least-privilege Gold-only access; executable grants; test plan | §9 · `sql/08` | Repo ✓ · Run |
+| Cleanup: stop warehouse, disable schedules, check credits, export before expiry | `operations/README.md` §3 · `sql/09` | Repo ✓ · Run |
 | Every trial limitation and fallback disclosed | §10 | Run: fill table |
-| No tokens, credentials, PII or real data in repo/screenshots | `.gitignore` · masked `evidence/02` | ✓ (keep masking new screenshots) |
+| No tokens, credentials, PII or real data in the repo | `.gitignore` | ✓ |
 
 ## How to reproduce
 1. `python generator/generate_data.py`. The output's sha256 must match `generator/manifest.json`.
@@ -380,5 +379,4 @@ Status: **Repo** = implemented and committed. **Run** = needs execution or a scr
 | `sql/` | Setup, landing counts, Bronze/Silver checks, Gold metrics, dashboard datasets, Genie verification, cross-tool check, grants, credit usage, quality assertions |
 | `dashboards/` | AI/BI dashboard spec and export, Genie setup and question checks |
 | `powerbi/` | `.pbix`, DAX measures, connection guide (and Gold-only exports if the fallback was used) |
-| `evidence/` | Topic-numbered, masked screenshots and output snippets (checklist in `evidence/README.md`) |
 | `operations/` | Lakeflow Job JSON, least-privilege plan, credit tracking, cleanup checklist |

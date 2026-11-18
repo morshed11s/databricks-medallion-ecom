@@ -33,7 +33,6 @@ Alternatively, paste the JSON into *Edit as JSON/YAML*, or run `databricks jobs 
 ### Why Gold does not run after a failed dependency
 Each task's default *Run if* condition is **All succeeded**. If Silver fails, for example because the reconciliation assertion `Bronze = accepted + quarantined + duplicates` is false, Gold is marked **Upstream failed** and never starts. That is the intended behaviour. Gold would otherwise rebuild the marts from Silver tables that are incomplete or from a previous run, and dashboards would publish wrong numbers that look trustworthy. The last good Gold tables stay in place until a run passes all checks. A *Repair run* re-runs only the failed task and the tasks after it.
 
-Run evidence: `evidence/21_job_graph.png`, `22_job_run_success.png`, `23_job_retry_notifications.png`.
 Run ID / duration: ⟨fill in from the run page⟩
 
 ## 2. Least-privilege reporting access
@@ -50,7 +49,7 @@ Reporting users can query Gold but can't see Bronze/Silver (raw and rejected rec
 **Testing:**
 1. Add a second identity you own to the group.
 2. Run the test queries at the bottom of `sql/08_grants.sql`. Gold queries should succeed; everything else should return `PERMISSION_DENIED`.
-3. Save the `SHOW GRANTS` output as evidence.
+3. Record the `SHOW GRANTS` output.
 
 If adding users or groups is restricted in the trial, submit `sql/08_grants.sql` as the executable plan with the `SHOW GRANTS` output, and record the restriction in README §10.
 Result: ⟨executed / plan only, and why⟩
@@ -71,7 +70,6 @@ Credit check: **Manage Trial** panel (top bar) and [`sql/09_credit_usage.sql`](.
 - [ ] Power BI personal access token **revoked** (Settings → Developer → Access tokens)
 - [ ] Dashboard exported (`.lvdash.json` + PDF) to `dashboards/`
 - [ ] `.pbix` saved to `powerbi/`
-- [ ] Evidence screenshots masked and committed (`evidence/`)
 - [ ] All commits **pushed** to GitHub
 - [ ] Credits remaining recorded above
 - [ ] No payment method added, no upgrade, no extra cloud resources

@@ -1,7 +1,7 @@
 # Genie Agent: "E-commerce Gold Analyst"
 
 Availability in this trial: ⟨Available / Not available: describe exactly what the UI shows⟩
-(The left navigation shows **Genie Agents**, see `evidence/02_catalog.png`.)
+(The workspace navigation shows **Genie Agents**.)
 
 ## Setup
 1. **Genie Agents → New**. Warehouse: the serverless starter warehouse.
@@ -24,7 +24,7 @@ You answer questions about an e-commerce business using the Gold tables only.
 
 ## Question checks
 
-Run each question in a **new chat**. Screenshot the answer **and** "Show code", then run the trusted SQL.
+Run each question in a **new chat**. Note the answer **and** its generated SQL ("Show code"), then run the trusted SQL.
 
 | # | Question asked to Genie | Trusted SQL | Genie answer | Trusted SQL answer | Match? | Notes |
 |---|---|---|---|---|---|---|
@@ -43,4 +43,4 @@ Run each question in a **new chat**. Screenshot the answer **and** "Show code", 
 If an answer is wrong, add or adjust an instruction or trusted example, ask again and record both attempts. That is the point of verifying.
 
 ## Fallback (only if Genie is unavailable)
-Record the restriction (screenshot of the missing menu or an error message) in README §10. Keep the three intended prompts above and provide the trusted SQL results from `sql/06_genie_verification.sql` as the assessment answers.
+Record the restriction (the missing menu or the exact error message) in README §10. Keep the three intended prompts above and provide the trusted SQL results from `sql/06_genie_verification.sql` as the assessment answers.
