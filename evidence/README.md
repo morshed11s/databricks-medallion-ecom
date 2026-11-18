@@ -31,5 +31,6 @@ Every screenshot here comes from my own Databricks trial workspace. Before commi
 | 23 | `23_job_retry_notifications.png` | Jobs | Retry and failure-notification settings |
 | 24 | `24_grants.png` | Security | `SHOW GRANTS` output for the reporting group |
 | 25 | `25_credits_cleanup.png` | Cleanup | Credits remaining + warehouse stopped + no schedule |
+| 26 | `26_quality_assertions.png` | All layers | `sql/10_quality_assertions.sql` table A (source → Bronze → Silver) + final "ALL QUALITY ASSERTIONS PASSED" |
 
 Text outputs can also be saved as `.md` or `.csv` snippets with the same number prefix.

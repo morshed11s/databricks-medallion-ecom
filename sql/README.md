@@ -12,3 +12,4 @@
 | `07_cross_tool_revenue_check.sql` | SQL vs AI/BI vs Power BI revenue comparison + diagnostics |
 | `08_grants.sql` | Least-privilege Gold-only reporting grants and test plan |
 | `09_credit_usage.sql` | Trial DBU / cost tracking from system tables |
+| `10_quality_assertions.sql` | `assert_true` invariants for every layer, incl. source → Bronze → Silver reconciliation |

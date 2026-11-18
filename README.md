@@ -75,6 +75,20 @@ Because the layer is the table prefix, anyone browsing the catalog can see a tab
 - Notebooks are stored in Databricks source format (`.py`), so diffs are reviewable.
 - Integration limitations: ⟨none / describe⟩.
 
+### SQL & query strategy
+- **Transformations in notebooks, on serverless.** Bronze and Silver are PySpark (file hashing, safe parsing, window dedup, fail-fast assertions). Gold is Spark SQL `CREATE OR REPLACE TABLE … AS SELECT`. Every notebook can be safely re-run and stops on a failed invariant.
+- **Each rule is defined once.**
+  - Validation rules exist only in `04_silver` and are materialised as `ref_dq_rules`.
+  - The revenue rule exists only in `gold_fact_orders.revenue_usd`.
+  - Marts, dashboards, Genie and Power BI only `SUM(revenue_usd)`. None of them re-derive revenue.
+- **One governed query layer.** A single SQL warehouse serves the AI/BI dashboard, Genie and Power BI, and grants restrict consumers to Gold (`sql/08_grants.sql`).
+- **Correct re-aggregation.**
+  - Rates are stored with their numerator and denominator and re-aggregated as `SUM/SUM`, never `AVG(rate)`.
+  - Money is `DECIMAL`, so totals don't drift.
+  - Dates are `DATE`, so date-range filters match across tools.
+- **Verification SQL is separate from the pipeline** (`sql/`). The landing, Bronze and Silver checks are reproducible queries. The trusted metric queries are the reference for BI cross-checks. [`sql/10_quality_assertions.sql`](sql/10_quality_assertions.sql) re-checks every invariant with `assert_true` and fails loudly.
+- **Names are fully qualified** (`workspace.ecom_poc.<table>`), and the catalog is a single notebook/job parameter.
+
 ## 3. Synthetic source files
 ### Generator & dirty-data inventory
 [`generator/generate_data.py`](generator/generate_data.py) uses only the Python standard library and seed **42**. It writes exactly **1,000,000 data rows + header** per file, and the same seed always produces the same bytes (sha256 in [`generator/manifest.json`](generator/manifest.json)). Each row gets at most one injected anomaly, so the inventory is exact: [`generator/dirty_data_report.md`](generator/dirty_data_report.md).
@@ -317,6 +331,39 @@ Details: [`operations/README.md`](operations/README.md). Job definition: [`opera
 | System billing tables | ⟨ ⟩ | ⟨Manage Trial panel⟩ |
 | Other | ⟨ ⟩ | ⟨ ⟩ |
 
+## 11. Requirement traceability
+Status: **Repo** = implemented and committed. **Run** = needs execution or a screenshot from the trial workspace (see `evidence/README.md`).
+
+| Brief requirement | Where it is met | Status |
+|---|---|---|
+| Own-email trial; cloud, region, dates, compute, restrictions; trial vs Free Edition | §2, §10 · `evidence/03` | Repo text ✓ · Run: fill values + screenshot |
+| `ecom_poc` schema + managed `raw_files` volume; naming standard; exact path | §2 · `sql/00_setup.sql` · `notebooks/01_setup` · `evidence/02` | ✓ |
+| Notebook compute + SQL warehouse; ETL vs BI reason; credit saving | §2 · `evidence/05` | Repo ✓ · Run: screenshot |
+| Git folder; repo URL; commit per stage | §2 · `git log` · `evidence/01` | ✓ |
+| 1,000,000 rows per file; ≥5 dirty categories; inventory; why small fraction | §3 · `generator/` | ✓ |
+| Upload; exact rows, bytes, path; reproducible count | §3 · `sql/01` · `notebooks/02` · `evidence/04, 06` | Repo ✓ · Run |
+| Why no real data / credentials / extracts in Git; production controls; `.gitignore` | §3 · `.gitignore` | ✓ |
+| Bronze: one Delta table per CSV, all STRING, no inference; why keep malformed rows | §4 · `notebooks/03` · `evidence/07` | Repo ✓ · Run |
+| Audit fields `_ingested_at`, `_source_file`, `_batch_id`, `_row_hash` explained | §4 | ✓ |
+| Lossless source = Bronze; idempotent re-run | §4 · `ops_bronze_load_log` · `sql/02` · `evidence/08` | Repo ✓ · Run (run Bronze twice) |
+| Safe parsing (`try_cast`); what happens to unparseable strings; before/after | §5 · `notebooks/04` | Repo ✓ · Run |
+| Rule matrix (ranges, mandatory, statuses, currencies, non-future, orphans); counts by rule | §5 · `ref_dq_rules` · `ops_silver_rule_counts` · `evidence/10` | Repo ✓ · Run |
+| Deterministic dedup; keep-one rule; exact rows vs key conflicts; winners/losers | §5 · `notebooks/04` · `sql/03` · `evidence/11` | Repo ✓ · Run |
+| Quarantine with `rejection_reasons`; Bronze = accepted + quarantined + losers, no overlap | §5 · `ops_silver_reconciliation` · `sql/03`, `sql/10` · `evidence/09` | Repo ✓ · Run |
+| Revenue definition (statuses, currency, refunds, partial/repeat payments, source of truth) + example | §6 · `notebooks/05` | ✓ |
+| ≥4 Gold datasets; no fan-out; table list, row counts, samples | §6 · `notebooks/05` · `evidence/12` | Repo ✓ · Run |
+| Table/column descriptions; grain, key, assumptions; why it prevents misreading | §6 · UC comments · `evidence/13` | Repo ✓ · Run |
+| AI/BI dashboard: ≥4 KPIs, 1 trend, 2 breakdowns, 1 shared filter; link or export | §7 · `dashboards/README.md` · `evidence/14` | Spec ✓ · Run: build, link/export |
+| Genie: 3 questions cross-checked with SQL, or documented fallback | §7 · `dashboards/genie.md` · `sql/06` · `evidence/15–17` | Spec ✓ · Run |
+| Power BI native connector, Import; Import vs DirectQuery; masked connection screenshot | §8 · `powerbi/README.md` · `evidence/18` | Repo ✓ · Run |
+| ≥4 measures; one-page report (KPI cards, trend, category chart, slicers); `.pbix` | §8 · `powerbi/measures.dax` · `evidence/19` | Spec ✓ · Run: build `.pbix` |
+| Same revenue in SQL, AI/BI and Power BI under identical filters; mismatch diagnosis | §8 · `sql/07` · `evidence/20` | Repo ✓ · Run: fill table |
+| Lakeflow Job Bronze → Silver → Gold; dependencies, retries, failure notification; one successful run; schedule disabled; why Gold stops | §9 · `operations/` · `evidence/21–23` | Repo ✓ · Run |
+| Least-privilege Gold-only access; executable grants; test plan | §9 · `sql/08` · `evidence/24` | Repo ✓ · Run |
+| Cleanup: stop warehouse, disable schedules, check credits, export before expiry | `operations/README.md` §3 · `sql/09` · `evidence/25` | Repo ✓ · Run |
+| Every trial limitation and fallback disclosed | §10 | Run: fill table |
+| No tokens, credentials, PII or real data in repo/screenshots | `.gitignore` · masked `evidence/02` | ✓ (keep masking new screenshots) |
+
 ## How to reproduce
 1. `python generator/generate_data.py`. The output's sha256 must match `generator/manifest.json`.
 2. In Databricks, clone the repo as a Git folder.
@@ -330,7 +377,7 @@ Details: [`operations/README.md`](operations/README.md). Job definition: [`opera
 |---|---|
 | `generator/` | Seeded generation script, dirty-data report, manifest (CSVs excluded) |
 | `notebooks/` | `00_config`, `01_setup`, `02_landing_checks`, `03_bronze`, `04_silver` (incl. reconciliation), `05_gold`, `06_export_gold_for_powerbi` (fallback) |
-| `sql/` | Setup, landing counts, Bronze/Silver checks, Gold metrics, dashboard datasets, Genie verification, cross-tool check, grants, credit usage |
+| `sql/` | Setup, landing counts, Bronze/Silver checks, Gold metrics, dashboard datasets, Genie verification, cross-tool check, grants, credit usage, quality assertions |
 | `dashboards/` | AI/BI dashboard spec and export, Genie setup and question checks |
 | `powerbi/` | `.pbix`, DAX measures, connection guide (and Gold-only exports if the fallback was used) |
 | `evidence/` | Topic-numbered, masked screenshots and output snippets (checklist in `evidence/README.md`) |
