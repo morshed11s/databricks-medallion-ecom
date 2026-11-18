@@ -1,0 +1,46 @@
+// Power BI measures. Same definitions as the Databricks AI/BI dashboard (dashboards/README.md)
+// and the trusted SQL (sql/04_gold_metrics.sql). Revenue is never recomputed: always SUM(revenue_usd).
+
+// ---- Calculated table: shared date dimension (Modeling > New table) ----
+Date =
+VAR MinDate = MIN ( MIN ( gold_daily_sales[order_date] ), MIN ( gold_payment_success[txn_date] ) )
+VAR MaxDate = MAX ( MAX ( gold_daily_sales[order_date] ), MAX ( gold_payment_success[txn_date] ) )
+RETURN
+    ADDCOLUMNS (
+        CALENDAR ( MinDate, MaxDate ),
+        "Year", YEAR ( [Date] ),
+        "Month", FORMAT ( [Date], "yyyy-MM" ),
+        "Week Start", [Date] - WEEKDAY ( [Date], 2 ) + 1
+    )
+
+// Relationships (single direction, many-to-one, Date[Date] 1 -> *):
+//   Date[Date] -> gold_daily_sales[order_date]
+//   Date[Date] -> gold_revenue_breakdown[order_date]
+//   Date[Date] -> gold_payment_success[txn_date]
+// gold_top_customers is lifetime: no relationship.
+
+// ---- Measures (create in a "Measures" table) ----
+Total Revenue (USD) =
+    SUM ( gold_revenue_breakdown[revenue_usd] )
+
+Revenue Orders =
+    SUM ( gold_revenue_breakdown[revenue_orders] )
+
+Avg Order Value (USD) =
+    DIVIDE ( [Total Revenue (USD)], [Revenue Orders] )
+
+Units Sold =
+    SUM ( gold_revenue_breakdown[units_sold] )
+
+Cancellation Rate =
+    DIVIDE ( SUM ( gold_daily_sales[cancelled_orders] ), SUM ( gold_daily_sales[total_orders] ) )
+
+Payment Success Rate =
+    DIVIDE (
+        SUM ( gold_payment_success[successful] ),
+        SUM ( gold_payment_success[successful] ) + SUM ( gold_payment_success[failed] )
+    )
+
+// Cross-check helper: must equal [Total Revenue (USD)] for the same date range (no category/country filter)
+Total Revenue via Daily Sales (USD) =
+    SUM ( gold_daily_sales[revenue_usd] )
