@@ -25,12 +25,10 @@ SOURCE_FILES = {"orders": f"{RAW_PATH}/orders.csv", "transactions": f"{RAW_PATH}
 
 
 def t(name: str) -> str:
-    """Fully-qualified, quoted table name for SQL text."""
     return f"`{CATALOG}`.`{SCHEMA}`.`{name}`"
 
 
 def tn(name: str) -> str:
-    """Fully-qualified table name for DataFrame APIs (spark.table / saveAsTable)."""
     return f"{CATALOG}.{SCHEMA}.{name}"
 
 
@@ -39,7 +37,6 @@ def _esc(s: str) -> str:
 
 
 def document_table(name: str, table_comment: str, column_comments: dict) -> None:
-    """Write table and column descriptions to Unity Catalog (shown in Catalog Explorer)."""
     spark.sql(f"COMMENT ON TABLE {t(name)} IS '{_esc(table_comment)}'")
     for col, comment in column_comments.items():
         spark.sql(f"ALTER TABLE {t(name)} ALTER COLUMN `{col}` COMMENT '{_esc(comment)}'")

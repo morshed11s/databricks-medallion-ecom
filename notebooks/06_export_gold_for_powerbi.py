@@ -20,7 +20,7 @@ EXPORT_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/exports"
 MARTS = ["gold_daily_sales", "gold_revenue_breakdown", "gold_payment_success", "gold_top_customers"]
 summary = []
 for name in MARTS:
-    pdf = spark.table(tn(name)).toPandas()            # marts are small (at most tens of thousands of rows)
+    pdf = spark.table(tn(name)).toPandas()
     path = f"{EXPORT_PATH}/{name}.csv"
     pdf.to_csv(path, index=False)
     revenue = float(pdf["revenue_usd"].sum()) if "revenue_usd" in pdf else None

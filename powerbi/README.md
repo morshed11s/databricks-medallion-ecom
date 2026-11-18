@@ -2,11 +2,9 @@
 
 | Item | File |
 |---|---|
-| Report | `powerbi/ecom_sales_report.pbix` ⟨save here⟩ |
+| Report | `powerbi/ecom_sales_report.pbix` |
 | Measures (DAX) | [`powerbi/measures.dax`](measures.dax) |
 | Fallback exports (only if used) | `powerbi/gold_exports/*.csv` via [`notebooks/06_export_gold_for_powerbi.py`](../notebooks/06_export_gold_for_powerbi.py) |
-
-Connection used: ⟨Native connector (Import) / Fallback: Gold CSV export, with the reason⟩
 
 ## 1. Connect (native connector, Import)
 1. In Databricks: **SQL Warehouses → (warehouse) → Connection details**. Copy *Server hostname* and *HTTP path*.
@@ -28,7 +26,8 @@ Connection used: ⟨Native connector (Import) / Fallback: Gold CSV export, with 
 **Why Import:** the Gold marts are small aggregates that refresh once per pipeline run. Import gives fast visuals and lets the SQL warehouse auto-stop, which matters on a credit-limited trial. DirectQuery would only be worth it for near-real-time data or tables too large to import.
 
 ## 2. Model
-- Calculated table `Date`, plus the relationships listed in [`measures.dax`](measures.dax). Mark `Date` as the date table.
+- Calculated table `Date` from [`measures.dax`](measures.dax). Mark it as the date table.
+- Relationships (single direction, one-to-many from `Date[Date]`): `gold_daily_sales[order_date]`, `gold_revenue_breakdown[order_date]`, `gold_payment_success[txn_date]`. `gold_top_customers` is lifetime and has no relationship.
 - Set `order_date` / `txn_date` columns to type **Date** (no time part), so date-range filters match Databricks exactly.
 - Set the money columns to **Fixed decimal number**, which avoids floating-point drift in totals.
 
@@ -49,7 +48,7 @@ Connection used: ⟨Native connector (Import) / Fallback: Gold CSV export, with 
 Add a text box with the revenue definition (same wording as the dashboard note).
 
 ## 5. Revenue agreement
-Set the date slicer to **2026-01-01 – 2026-06-30** and clear the category and country slicers. The Total Revenue card must equal [`sql/07_cross_tool_revenue_check.sql`](../sql/07_cross_tool_revenue_check.sql) (A) and dashboard KPI K1. Record the three values in README §8.
+Set the date slicer to **2026-01-01 – 2026-06-30** and clear the category and country slicers. The Total Revenue card must equal the first query in [`sql/07_cross_tool_revenue_check.sql`](../sql/07_cross_tool_revenue_check.sql) and dashboard KPI K1. Record the three values in README §8.
 
 ## Fallback: Gold-only CSV export
 Use this only if the connector cannot authenticate or reach the warehouse:

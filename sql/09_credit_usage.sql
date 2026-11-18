@@ -1,17 +1,12 @@
--- Trial credit tracking. Requires access to system tables (usually available to the trial admin).
--- If system.billing is not accessible, use the "Manage Trial" panel / account console usage page instead.
-
--- DBUs by day and product since the trial started
 SELECT usage_date,
        billing_origin_product,
        sku_name,
        ROUND(SUM(usage_quantity), 2) AS dbus
 FROM system.billing.usage
-WHERE usage_date >= DATE'2026-11-16'          -- trial start
+WHERE usage_date >= DATE'2026-11-16'
 GROUP BY ALL
 ORDER BY usage_date, dbus DESC;
 
--- Approximate list cost (USD) by product, using list prices
 SELECT u.billing_origin_product,
        ROUND(SUM(u.usage_quantity * p.pricing.default), 2) AS approx_list_cost_usd
 FROM system.billing.usage u

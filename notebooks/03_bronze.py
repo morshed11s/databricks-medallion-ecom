@@ -51,7 +51,7 @@ def file_sha256_and_rows(path):
         for chunk in iter(lambda: f.read(8 << 20), b""):
             h.update(chunk)
             lines += chunk.count(b"\n")
-    return h.hexdigest(), lines - 1   # minus header
+    return h.hexdigest(), lines - 1
 
 # COMMAND ----------
 
@@ -85,11 +85,11 @@ def load_bronze(dataset):
 
     schema = StructType([StructField(c, StringType(), True) for c in cols])
     raw = (spark.read.format("csv")
-           .schema(schema)                      # explicit, all STRING
+           .schema(schema)
            .option("header", "true")
            .option("inferSchema", "false")
-           .option("enforceSchema", "false")    # header must match the declared column names
-           .option("mode", "FAILFAST")          # a structurally broken line fails the load (no silent drops)
+           .option("enforceSchema", "false")
+           .option("mode", "FAILFAST")
            .option("ignoreLeadingWhiteSpace", "false")
            .option("ignoreTrailingWhiteSpace", "false")
            .option("quote", '"').option("escape", '"')
@@ -98,9 +98,8 @@ def load_bronze(dataset):
            .withColumn("_split_start", F.col("_metadata.file_block_start"))
            .withColumn("_pos_in_split", F.monotonically_increasing_id()))
 
-    # Stable file order: order by the byte offset of the split, then by position inside the split.
     w = Window.orderBy("_split_start", "_pos_in_split")
-    null_marker = F.lit("␀")   # distinguishes NULL from an empty string in the hash
+    null_marker = F.lit("␀")
     bronze = (raw
               .withColumn("_source_line", F.row_number().over(w).cast("bigint"))
               .withColumn("_ingested_at", F.current_timestamp())
@@ -112,7 +111,7 @@ def load_bronze(dataset):
     ensure_bronze_table(table, cols)
     (bronze.write.format("delta")
      .mode("overwrite")
-     .option("replaceWhere", f"_batch_id = '{batch_id}'")   # idempotent: replace only this batch
+     .option("replaceWhere", f"_batch_id = '{batch_id}'")
      .saveAsTable(f"{CATALOG}.{SCHEMA}.{table}"))
 
     bronze_rows = spark.table(f"{CATALOG}.{SCHEMA}.{table}").where(F.col("_batch_id") == batch_id).count()
@@ -136,7 +135,7 @@ display(log_df)
 
 for r in results:
     assert r["lossless"], f"{r['table']}: source {r['source_data_rows']} != bronze {r['bronze_rows_for_batch']}"
-print("✅ Lossless: source data-row count equals Bronze row count for every dataset.")
+print("Lossless: source data-row count equals Bronze row count for every dataset.")
 
 # COMMAND ----------
 

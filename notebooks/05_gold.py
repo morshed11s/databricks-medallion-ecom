@@ -51,7 +51,7 @@ spark.sql(f"USE SCHEMA `{SCHEMA}`")
 
 spark.sql(f"""
 CREATE OR REPLACE TABLE gold_fact_orders AS
-WITH pay AS (                         -- aggregate FIRST: one row per order_id
+WITH pay AS (
   SELECT order_id,
          COUNT(*)                                                     AS payment_attempts,
          COUNT_IF(txn_status = 'SUCCESS')                             AS successful_payments,
@@ -178,7 +178,6 @@ document_table("gold_top_customers",
 
 # COMMAND ----------
 
-# Informational primary keys (documentation only; not enforced). Skipped quietly if unsupported.
 for table, cols in [("gold_fact_orders", ["order_id"]), ("gold_daily_sales", ["order_date"]),
                     ("gold_revenue_breakdown", ["order_date", "category", "country"]),
                     ("gold_payment_success", ["txn_date", "payment_method"]), ("gold_top_customers", ["customer_id"])]:
@@ -218,7 +217,7 @@ SELECT (SELECT SUM(revenue_usd) FROM gold_fact_orders)       AS fact_orders,
 display(rev)
 r = rev.first()
 assert r["fact_orders"] == r["daily_sales"] == r["revenue_breakdown"] == r["top_customers"], "Revenue differs between marts"
-print(f"✅ Total revenue identical in all marts: {r['fact_orders']:,} USD")
+print(f"Total revenue identical in all marts: {r['fact_orders']:,} USD")
 
 # COMMAND ----------
 

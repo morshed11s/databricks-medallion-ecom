@@ -16,8 +16,6 @@
 import hashlib, json, os
 from datetime import datetime, timezone
 
-# Expected values come from the generator manifest (repo file). If this notebook is not running
-# from a Git folder, the fallback values below are a copy of generator/manifest.json.
 EXPECTED = {
     "orders.csv": {"bytes": 66468913, "data_rows": 1000000,
                    "sha256": "e453eec15117b97ed0de6945f53364c762c10769fb56c39959cd665500423529"},
@@ -36,7 +34,6 @@ except Exception as e:
 # COMMAND ----------
 
 def scan(path):
-    """Stream the file once: SHA-256 and newline count (data rows = lines - header)."""
     h, lines = hashlib.sha256(), 0
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(8 << 20), b""):
@@ -72,7 +69,7 @@ landing.write.mode("append").saveAsTable(t("ops_landing_file_log").replace("`", 
 
 assert len(results) == 2, f"Expected 2 CSV files in {RAW_PATH}, found {len(results)}"
 assert all(r[8] for r in results), "A landed file does not match the generator manifest!"
-print("✅ Both files landed unchanged: bytes, row counts and SHA-256 match the manifest.")
+print("Both files landed unchanged: bytes, row counts and SHA-256 match the manifest.")
 
 # COMMAND ----------
 

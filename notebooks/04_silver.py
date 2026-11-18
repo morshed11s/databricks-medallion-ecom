@@ -32,7 +32,7 @@
 
 from pyspark.sql import functions as F, Window
 
-NULL_TOKENS = ["", "NULL", "NONE"]          # compared after trim + upper
+NULL_TOKENS = ["", "NULL", "NONE"]
 DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
 TS_RE = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"
 
@@ -41,7 +41,7 @@ ORDER_STATUSES = ["COMPLETED", "SHIPPED", "PENDING", "CANCELLED", "RETURNED"]
 COUNTRIES = ["US", "GB", "DE", "FR", "IN", "CA", "AU", "BD", "NL", "ES"]
 PAYMENT_METHODS = ["CARD", "PAYPAL", "WALLET", "BANK_TRANSFER", "COD"]
 TXN_STATUSES = ["SUCCESS", "FAILED", "PENDING", "REFUNDED"]
-FX_TO_USD = [("USD", "1.000000"), ("EUR", "1.086957"), ("GBP", "1.265823")]   # fixed PoC rates
+FX_TO_USD = [("USD", "1.000000"), ("EUR", "1.086957"), ("GBP", "1.265823")]
 QTY_MIN, QTY_MAX = 1, 100
 PRICE_MAX = 100_000
 AMOUNT_MAX = 1_000_000
@@ -52,7 +52,6 @@ LINEAGE = ["_bronze_row_id", "_batch_id", "_source_file", "_source_line", "_row_
 
 
 def clean(c):
-    """Trim; map blank / NULL-like tokens to SQL NULL."""
     v = F.trim(F.col(c))
     return F.when(v.isNull() | F.upper(v).isin(NULL_TOKENS), F.lit(None).cast("string")).otherwise(v)
 
@@ -135,7 +134,6 @@ o = o.withColumn("rejection_reasons", reasons_col(ORDER_RULES))
 # COMMAND ----------
 
 def split_outcomes(df, key, order_cols):
-    """Returns (winners, losers) among VALID rows. Invalid rows never compete."""
     valid = df.where(F.size("rejection_reasons") == 0)
     w = Window.partitionBy(key).orderBy(*order_cols)
     ranked = (valid
@@ -185,7 +183,7 @@ write(order_losers.select(*ORDER_RAW, c("c_order_id").alias("dedup_key"), "dupli
 # COMMAND ----------
 
 bt = spark.table(tn("bronze_transactions"))
-known_orders = spark.table(tn("silver_orders")).select(c("order_id").alias("_known_order_id"))  # unique keys: no fan-out
+known_orders = spark.table(tn("silver_orders")).select(c("order_id").alias("_known_order_id"))
 
 x = (bt
      .withColumn("c_txn_id", clean("txn_id"))
@@ -315,9 +313,9 @@ def reconcile(ds):
     outcomes = acc.unionAll(qua).unionAll(dup)
     n_out = outcomes.count()
     return (ds, bronze.count(), acc.count(), qua.count(), dup.count(), n_out,
-            n_out - outcomes.distinct().count(),                     # row ids in >1 outcome
-            bronze.join(outcomes, "_bronze_row_id", "left_anti").count(),   # bronze rows with no outcome
-            outcomes.join(bronze, "_bronze_row_id", "left_anti").count())   # outcomes not from bronze
+            n_out - outcomes.distinct().count(),
+            bronze.join(outcomes, "_bronze_row_id", "left_anti").count(),
+            outcomes.join(bronze, "_bronze_row_id", "left_anti").count())
 
 recon = spark.createDataFrame(
     [reconcile(ds) for ds in ("orders", "transactions")],
@@ -334,7 +332,7 @@ spark.sql(f"""CREATE TABLE IF NOT EXISTS {t('ops_silver_reconciliation')}
 recon.write.mode("append").saveAsTable(tn("ops_silver_reconciliation"))
 display(recon)
 assert all(r["balanced"] for r in recon.collect()), "Silver reconciliation FAILED"
-print("✅ Reconciled: every Bronze row has exactly one Silver outcome, for both datasets.")
+print("Reconciled: every Bronze row has exactly one Silver outcome, for both datasets.")
 
 # COMMAND ----------
 

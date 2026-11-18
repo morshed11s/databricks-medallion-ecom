@@ -33,8 +33,6 @@ Alternatively, paste the JSON into *Edit as JSON/YAML*, or run `databricks jobs 
 ### Why Gold does not run after a failed dependency
 Each task's default *Run if* condition is **All succeeded**. If Silver fails, for example because the reconciliation assertion `Bronze = accepted + quarantined + duplicates` is false, Gold is marked **Upstream failed** and never starts. That is the intended behaviour. Gold would otherwise rebuild the marts from Silver tables that are incomplete or from a previous run, and dashboards would publish wrong numbers that look trustworthy. The last good Gold tables stay in place until a run passes all checks. A *Repair run* re-runs only the failed task and the tasks after it.
 
-Run ID / duration: ⟨fill in from the run page⟩
-
 ## 2. Least-privilege reporting access
 
 Grant plan: [`sql/08_grants.sql`](../sql/08_grants.sql).
@@ -48,20 +46,23 @@ Reporting users can query Gold but can't see Bronze/Silver (raw and rejected rec
 
 **Testing:**
 1. Add a second identity you own to the group.
-2. Run the test queries at the bottom of `sql/08_grants.sql`. Gold queries should succeed; everything else should return `PERMISSION_DENIED`.
-3. Record the `SHOW GRANTS` output.
+2. As that identity, run:
+   - `SELECT COUNT(*) FROM workspace.ecom_poc.gold_daily_sales;` succeeds
+   - `SELECT COUNT(*) FROM workspace.ecom_poc.silver_orders;` returns `PERMISSION_DENIED`
+   - `SELECT COUNT(*) FROM workspace.ecom_poc.bronze_transactions;` returns `PERMISSION_DENIED`
+   - `LIST '/Volumes/workspace/ecom_poc/raw_files/';` returns `PERMISSION_DENIED`
+   - `CREATE TABLE workspace.ecom_poc.x (a INT);` returns `PERMISSION_DENIED`
+3. Record the `SHOW GRANTS` output, and repeat it after a job re-run to confirm the Gold grants persist.
 
 If adding users or groups is restricted in the trial, submit `sql/08_grants.sql` as the executable plan with the `SHOW GRANTS` output, and record the restriction in README §10.
-Result: ⟨executed / plan only, and why⟩
 
 ## 3. Credits & end-of-trial cleanup
 
 Credit check: **Manage Trial** panel (top bar) and [`sql/09_credit_usage.sql`](../sql/09_credit_usage.sql) (system billing tables).
 
-| Date | Credits remaining | DBUs used to date | Source |
-|---|---|---|---|
-| ⟨2026-11-16⟩ | ⟨ ⟩ | ⟨ ⟩ | Manage Trial |
-| ⟨2026-11-19⟩ | ⟨ ⟩ | ⟨ ⟩ | Manage Trial |
+| Date | Credits remaining | Source |
+|---|---|---|
+| 2026-11-16 | $394 of $400 | Manage Trial panel |
 
 ### Cleanup checklist
 - [ ] SQL warehouse **stopped**, auto-stop set to 10 min (the smallest allowed)

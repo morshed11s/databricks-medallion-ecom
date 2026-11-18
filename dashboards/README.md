@@ -8,16 +8,22 @@
 | Genie verification SQL | [`sql/06_genie_verification.sql`](../sql/06_genie_verification.sql) |
 | Exported dashboard definition | `dashboards/ecom_sales_overview.lvdash.json` (export after building: ⋮ → *Export*) |
 
-Dashboard link: ⟨paste the published dashboard URL here⟩
-
 ## Dashboard: "E-commerce Sales Overview"
 
 **Compute:** the trial's serverless SQL warehouse (smallest size, auto-stop 10 min).
 **Data:** Gold tables only. No Bronze/Silver, so every number has the documented Gold grain and the single revenue definition.
 
 ### 1. Datasets (Data tab)
-Create four datasets from [`sql/05_dashboard_datasets.sql`](../sql/05_dashboard_datasets.sql): `ds_daily_sales`, `ds_revenue_breakdown`, `ds_payment_success`, `ds_top_customers`.
-In each dataset, add the custom calculation listed at the bottom of that file (AOV, cancellation rate, success rate). They are computed as **SUM/SUM** so they stay correct after filtering. Averaging a stored daily rate would be wrong.
+Create one dataset per query in [`sql/05_dashboard_datasets.sql`](../sql/05_dashboard_datasets.sql), in file order:
+
+| Dataset | Source | Grain | Custom calculation |
+|---|---|---|---|
+| `ds_daily_sales` | `gold_daily_sales` | order_date | `cancellation_rate = SUM(cancelled_orders) / SUM(total_orders)` |
+| `ds_revenue_breakdown` | `gold_revenue_breakdown` | order_date × category × country | `aov_usd = SUM(revenue_usd) / SUM(revenue_orders)` |
+| `ds_payment_success` | `gold_payment_success` | txn_date × payment_method | `success_rate = SUM(successful) / (SUM(successful) + SUM(failed))` |
+| `ds_top_customers` | `gold_top_customers` (top 20) | customer, lifetime | none |
+
+Ratios are computed as **SUM/SUM** so they stay correct after filtering. Averaging a stored daily rate would be wrong.
 
 ### 2. Widgets (Canvas)
 
@@ -49,7 +55,7 @@ Notes shown as a text widget on the dashboard:
 - *Top customers is lifetime and ignores the date filter.*
 
 ### 4. Revenue check
-Set the date filter to **2026-01-01 → 2026-06-30**, clear Category/Country and read K1. It must equal query R2 in [`sql/04_gold_metrics.sql`](../sql/04_gold_metrics.sql) and the Power BI card (README §8).
+Set the date filter to **2026-01-01 → 2026-06-30**, clear Category/Country and read K1. It must equal the date-range query (second query) in [`sql/04_gold_metrics.sql`](../sql/04_gold_metrics.sql) and the Power BI card (README §8).
 
 ### 5. Publish & share
 *Publish* with the warehouse's embedded credentials and share with the reporting group (`ecom_reporting`, see `operations/`). If sharing is restricted in the trial, export the `.lvdash.json` and a PDF instead, and record it in README §10.

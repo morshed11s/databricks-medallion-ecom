@@ -1,13 +1,12 @@
 # Genie Agent: "E-commerce Gold Analyst"
 
-Availability in this trial: ⟨Available / Not available: describe exactly what the UI shows⟩
-(The workspace navigation shows **Genie Agents**.)
+Genie Agents is available in this trial workspace (left navigation).
 
 ## Setup
 1. **Genie Agents → New**. Warehouse: the serverless starter warehouse.
 2. **Tables** (Gold only): `gold_fact_orders`, `gold_daily_sales`, `gold_revenue_breakdown`, `gold_payment_success`, `gold_top_customers` in `workspace.ecom_poc`.
 3. **General instructions:** paste the block below.
-4. **SQL examples (trusted):** add the three queries from [`sql/06_genie_verification.sql`](../sql/06_genie_verification.sql) with their questions as titles.
+4. **SQL examples (trusted):** add the first three queries from [`sql/06_genie_verification.sql`](../sql/06_genie_verification.sql) with their questions as titles.
 
 ```text
 You answer questions about an e-commerce business using the Gold tables only.
@@ -26,12 +25,12 @@ You answer questions about an e-commerce business using the Gold tables only.
 
 Run each question in a **new chat**. Note the answer **and** its generated SQL ("Show code"), then run the trusted SQL.
 
-| # | Question asked to Genie | Trusted SQL | Genie answer | Trusted SQL answer | Match? | Notes |
-|---|---|---|---|---|---|---|
-| Q1 | What was our total revenue in the first quarter of 2026? | `06_genie_verification.sql` Q1 | ⟨ ⟩ | ⟨ ⟩ | ⟨ ⟩ | |
-| Q2 | Which payment method has the highest payment success rate? | Q2 | ⟨ ⟩ | ⟨ ⟩ | ⟨ ⟩ | |
-| Q3 | What are the top 3 product categories by revenue in Germany? | Q3 | ⟨ ⟩ | ⟨ ⟩ | ⟨ ⟩ | |
-| (Q4) | What is the overall cancellation rate? | Trap check | ⟨ ⟩ | ⟨ ⟩ | ⟨ ⟩ | AVG-of-rates ≠ correct value |
+| # | Question asked to Genie | Trusted SQL in `sql/06_genie_verification.sql` | Notes |
+|---|---|---|---|
+| 1 | What was our total revenue in the first quarter of 2026? | query 1 | |
+| 2 | Which payment method has the highest payment success rate? | query 2 | |
+| 3 | What are the top 3 product categories by revenue in Germany? | query 3 | |
+| 4 (optional) | What is the overall cancellation rate? | query 4 | AVG of daily rates ≠ correct value |
 
 **What to look for in Genie's SQL:**
 - the right table;

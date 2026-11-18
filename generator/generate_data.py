@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-Seeded synthetic e-commerce data generator (standard library only).
-
-Produces:
-  orders.csv        order_id, customer_id, order_date, category, quantity, unit_price, order_status, country
-  transactions.csv  txn_id, order_id, payment_method, amount, currency, txn_status, txn_ts
-  dirty_data_report.json / dirty_data_report.md   (inventory of every injected anomaly)
-  manifest.json                                    (row counts, bytes, sha256 per file)
-
-Each file has exactly --rows data rows (default 1,000,000) plus one header row.
-Same --seed  ->  byte-identical output.
-
-Every data row gets AT MOST ONE injected anomaly. That keeps the inventory exact and easy to
-reconcile against Silver's quarantine counts. Rows without an anomaly are "clean".
-
-Usage:
-  python generator/generate_data.py                       # 1,000,000 rows each, seed 42
-  python generator/generate_data.py --rows 10000          # quick test
-"""
 import argparse
 import csv
 import hashlib
@@ -27,15 +8,12 @@ import random
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-# --------------------------------------------------------------------------------------
-# Reference domains (the "clean" contract)
-# --------------------------------------------------------------------------------------
-AS_OF = datetime(2026, 11, 1, 0, 0, 0)          # data snapshot time; no clean timestamp is later
-START_DATE = date(2025, 11, 1)                   # 12 months of history
+AS_OF = datetime(2026, 11, 1, 0, 0, 0)
+START_DATE = date(2025, 11, 1)
 N_DAYS = 365
 N_CUSTOMERS = 50_000
 
-CATEGORIES = {  # category: (min unit price USD, max unit price USD, weight)
+CATEGORIES = {
     "Electronics":    (25.0, 1500.0, 18),
     "Clothing":       (8.0,  180.0,  20),
     "Home & Kitchen": (10.0, 400.0,  15),
@@ -47,22 +25,19 @@ CATEGORIES = {  # category: (min unit price USD, max unit price USD, weight)
 }
 COUNTRIES = [("US", 30), ("GB", 12), ("DE", 10), ("FR", 8), ("IN", 10),
              ("CA", 8), ("AU", 6), ("BD", 6), ("NL", 5), ("ES", 5)]
-CURRENCY_BY_COUNTRY = {"GB": "GBP", "DE": "EUR", "FR": "EUR", "NL": "EUR", "ES": "EUR"}  # others USD
-FX_FROM_USD = {"USD": 1.00, "EUR": 0.92, "GBP": 0.79}   # fixed rates used to price payments
+CURRENCY_BY_COUNTRY = {"GB": "GBP", "DE": "EUR", "FR": "EUR", "NL": "EUR", "ES": "EUR"}
+FX_FROM_USD = {"USD": 1.00, "EUR": 0.92, "GBP": 0.79}
 
 ORDER_STATUSES = [("COMPLETED", 70), ("SHIPPED", 10), ("PENDING", 6), ("CANCELLED", 9), ("RETURNED", 5)]
 PAYMENT_METHODS = [("CARD", 50), ("PAYPAL", 20), ("WALLET", 15), ("BANK_TRANSFER", 10), ("COD", 5)]
 P_FIRST_ATTEMPT_FAILS = {"CARD": 0.06, "PAYPAL": 0.04, "WALLET": 0.08, "BANK_TRANSFER": 0.12, "COD": 0.03}
-P_SPLIT_PAYMENT = 0.06     # order paid in two partial SUCCESS payments
-P_REPEAT_PAYMENT = 0.04    # customer accidentally charged twice (two full SUCCESS payments)
+P_SPLIT_PAYMENT = 0.06
+P_REPEAT_PAYMENT = 0.04
 
 ORDER_HEADER = ["order_id", "customer_id", "order_date", "category", "quantity",
                 "unit_price", "order_status", "country"]
 TXN_HEADER = ["txn_id", "order_id", "payment_method", "amount", "currency", "txn_status", "txn_ts"]
 
-# --------------------------------------------------------------------------------------
-# Anomaly plan: (anomaly_type, probability per row). Mutually exclusive per row.
-# --------------------------------------------------------------------------------------
 ORDER_ANOMALIES = [
     ("duplicate_exact_row",    0.005),
     ("duplicate_key_conflict", 0.005),
@@ -72,7 +47,7 @@ ORDER_ANOMALIES = [
     ("invalid_date",           0.004),
     ("future_date",            0.003),
     ("invalid_status_label",   0.003),
-    ("case_whitespace",        0.030),   # messy but FIXABLE -> should be standardised, not rejected
+    ("case_whitespace",        0.030),
 ]
 TXN_ANOMALIES = [
     ("duplicate_exact_row",    0.005),
@@ -85,11 +60,11 @@ TXN_ANOMALIES = [
     ("unsupported_currency",   0.004),
     ("invalid_status_label",   0.002),
     ("orphan_order_id",        0.010),
-    ("case_whitespace",        0.030),   # messy but FIXABLE
+    ("case_whitespace",        0.030),
 ]
 
 NULL_TOKENS = ["", " ", "NULL", "null", "None"]
-RING_SIZE = 5000   # pool of recent clean rows used as duplicate sources
+RING_SIZE = 5000
 
 
 def _cum(items):
@@ -122,7 +97,6 @@ def pick_anomaly(rng, plan):
 
 
 def messy_case(rng, s):
-    """Return a variant of s that differs only in case / surrounding whitespace."""
     variants = [s.lower(), s.upper() if s != s.upper() else s.lower(), " " + s, s + "  ",
                 "  " + s.lower() + " ", s.title() if s != s.title() else s.swapcase()]
     v = rng.choice(variants)
@@ -140,12 +114,8 @@ def ring_add(rng, ring, row):
         ring[rng.randrange(RING_SIZE)] = row
 
 
-# --------------------------------------------------------------------------------------
-# Orders
-# --------------------------------------------------------------------------------------
 def generate_orders(rng, n_rows, path, stats):
-    """Writes orders.csv. Returns the list of clean orders that may receive payments."""
-    payable = []   # (order_id, total_usd, country, status, order_date)
+    payable = []
     ring = []
     next_id = 1
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -154,7 +124,6 @@ def generate_orders(rng, n_rows, path, stats):
         for _ in range(n_rows):
             anomaly = pick_anomaly(rng, ORDER_ANOMALIES)
 
-            # ---- duplicates: copy an earlier clean row (does not create a new order) ----
             if anomaly in ("duplicate_exact_row", "duplicate_key_conflict") and ring:
                 row = list(rng.choice(ring))
                 if anomaly == "duplicate_exact_row":
@@ -169,12 +138,11 @@ def generate_orders(rng, n_rows, path, stats):
                 w.writerow(row)
                 continue
             if anomaly in ("duplicate_exact_row", "duplicate_key_conflict"):
-                anomaly = None   # nothing to copy yet
+                anomaly = None
 
-            # ---- build a clean order ----
             order_id = f"ORD-{next_id:08d}"
             next_id += 1
-            cust = int(N_CUSTOMERS * (rng.random() ** 2.5)) + 1     # skewed: some heavy buyers
+            cust = int(N_CUSTOMERS * (rng.random() ** 2.5)) + 1
             customer_id = f"CUST-{cust:06d}"
             odate = START_DATE + timedelta(days=rng.randrange(N_DAYS))
             category = pick(rng, CAT_VALUES, CAT_CUM)
@@ -193,12 +161,11 @@ def generate_orders(rng, n_rows, path, stats):
                 w.writerow(row)
                 continue
 
-            # ---- inject one anomaly ----
             if anomaly == "case_whitespace":
                 field = rng.choice(["category", "order_status", "country"])
                 idx = ORDER_HEADER.index(field)
                 row[idx] = messy_case(rng, row[idx])
-                payable.append(clean_tuple)          # value is still valid after standardisation
+                payable.append(clean_tuple)
             elif anomaly == "null_or_blank":
                 field = rng.choice(ORDER_HEADER)
                 row[ORDER_HEADER.index(field)] = rng.choice(NULL_TOKENS)
@@ -232,11 +199,7 @@ def generate_orders(rng, n_rows, path, stats):
     return payable
 
 
-# --------------------------------------------------------------------------------------
-# Transactions
-# --------------------------------------------------------------------------------------
 def clean_txn_stream(rng, payable):
-    """Yields clean payment rows (without txn_id) for payable orders, in order-id order."""
     max_ts = AS_OF - timedelta(seconds=1)
     for order_id, total_usd, country, status, odate in payable:
         cur = CURRENCY_BY_COUNTRY.get(country, "USD")
@@ -294,12 +257,11 @@ def generate_transactions(rng, n_rows, path, payable, n_order_ids, stats):
         for _ in range(n_rows):
             anomaly = pick_anomaly(rng, TXN_ANOMALIES)
 
-            # ---- duplicates of an earlier clean txn ----
             if anomaly in ("duplicate_exact_row", "duplicate_key_conflict") and ring:
                 row = list(rng.choice(ring))
                 if anomaly == "duplicate_exact_row":
                     field = "*all*"
-                else:   # later status update for the same txn_id
+                else:
                     field = "txn_status,txn_ts"
                     row[5] = KEY_CONFLICT_TRANSITION[row[5]]
                     t = datetime.strptime(row[6], "%Y-%m-%d %H:%M:%S") + \
@@ -314,7 +276,6 @@ def generate_transactions(rng, n_rows, path, payable, n_order_ids, stats):
             txn_id = f"TXN-{next_id:08d}"
             next_id += 1
 
-            # ---- orphan: payment for an order that does not exist ----
             if anomaly == "orphan_order_id":
                 fake_order = f"ORD-9{rng.randrange(10**7):07d}"
                 cur = rng.choice(["USD", "EUR", "GBP"])
@@ -373,9 +334,6 @@ def generate_transactions(rng, n_rows, path, payable, n_order_ids, stats):
     stats[("_payable_orders", "order_id")] = len(payable)
 
 
-# --------------------------------------------------------------------------------------
-# Reporting
-# --------------------------------------------------------------------------------------
 def file_info(path):
     h = hashlib.sha256()
     lines = 0
@@ -432,7 +390,7 @@ def write_report(out_dir, n_rows, seed, order_stats, txn_stats):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description="Seeded synthetic e-commerce data generator for orders.csv and transactions.csv.", formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rows", type=int, default=1_000_000)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "output"))
@@ -445,7 +403,7 @@ def main():
     orders_path = os.path.join(args.out, "orders.csv")
     txns_path = os.path.join(args.out, "transactions.csv")
 
-    order_rng = random.Random(args.seed)          # independent streams per file
+    order_rng = random.Random(args.seed)
     txn_rng = random.Random(args.seed + 1)
     order_stats, txn_stats = Counter(), Counter()
 
