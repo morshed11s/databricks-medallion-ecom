@@ -1,363 +1,269 @@
-# Trustworthy E-commerce Lakehouse — Databricks Medallion Assignment
+# E-commerce Lakehouse: Databricks Medallion Pipeline
 
-Bronze → Silver → Gold lakehouse on a Databricks free trial, using reproducible synthetic order and payment data.
+A Bronze, Silver and Gold pipeline on Databricks that turns raw order and payment extracts into a single, documented revenue metric shared by an AI/BI dashboard, a Genie agent and Power BI.
 
 ```
-generator (seed 42) ─▶ orders.csv / transactions.csv (1,000,000 rows each)
-      │ upload
-      ▼
-/Volumes/ecom_catalog/ecom_poc/raw_files/          landing: unchanged files, checked against manifest sha256
-      │ 03_bronze (STRING, audit columns, replaceWhere per batch)
-      ▼
-bronze_orders · bronze_transactions             lossless: source rows = Bronze rows
-      │ 04_silver (safe parse → validate → dedup valid rows)
-      ▼
-silver_* (accepted) · silver_*_quarantine · silver_*_duplicates     Bronze = accepted + quarantined + duplicates
-      │ 05_gold (aggregate payments per order first, then 1:1 join)
-      ▼
-gold_fact_orders → gold_daily_sales · gold_revenue_breakdown · gold_payment_success · gold_top_customers
-      │ one SQL warehouse
-      ▼
-AI/BI dashboard · Genie Agent · Power BI (Import)          same revenue = SUM(revenue_usd)
+generator (seed 42) -> orders.csv, transactions.csv (1,000,000 rows each)
+        |  upload
+        v
+Unity Catalog volume   /Volumes/ecom_catalog/ecom_poc/raw_files/
+        |  03_bronze    all STRING, audit columns, idempotent per batch
+        v
+bronze_orders, bronze_transactions
+        |  04_silver    safe parse, validate, deduplicate
+        v
+silver_* (accepted), silver_*_quarantine, silver_*_duplicates
+        |  05_gold      aggregate payments per order, then 1:1 join
+        v
+gold_fact_orders -> gold_daily_sales, gold_revenue_breakdown,
+                    gold_payment_success, gold_top_customers
+        |  one SQL warehouse
+        v
+AI/BI dashboard, Genie agent, Power BI (Import)
 ```
 
-## 1. Business context
-An e-commerce company receives daily CSV extracts of orders and payment transactions. The extracts contain nulls, text in numeric fields, inconsistent labels, impossible or future timestamps, orphan payments and duplicates, so sales reports built on them disagree with each other. This project:
-- keeps the raw evidence unchanged (landing + Bronze);
-- cleans it with explicit, counted rules that never silently drop a row (Silver);
-- publishes one documented revenue definition that every reporting tool reuses (Gold → AI/BI, Genie, Power BI).
+## Overview
 
-## 2. Trial workspace & environment
+Daily CSV extracts of orders and payments contain nulls, text in numeric fields, inconsistent labels, invalid or future timestamps, orphan payments and duplicates. Reports built directly on them disagree. This project:
+
+- keeps the raw data unchanged (landing and Bronze);
+- applies explicit, counted validation rules without silently dropping rows (Silver);
+- publishes one revenue definition that every reporting tool reuses (Gold).
+
+## Environment
+
 | Item | Value |
 |---|---|
-| Account | Databricks **free trial**, registered and verified with my own email |
-| Trial start | 2026-11-16 (14-day trial) |
-| Credits | $400 at start; $394 remaining on 2026-11-16 (see `operations/README.md` §3) |
-| ETL compute | Serverless notebook compute |
-| BI compute | *Serverless Starter Warehouse* (SQL warehouse, smallest size, auto-stop 10 min) |
+| Platform | Databricks free trial (14 days, started 2026-11-16) |
+| ETL compute | Serverless notebooks |
+| BI compute | Serverless SQL warehouse, smallest size, 10-minute auto-stop |
+| Catalog / schema | `ecom_catalog` / `ecom_poc` |
+| Landing volume | `/Volumes/ecom_catalog/ecom_poc/raw_files/` |
+| Repository | <https://github.com/morshed11s/databricks-medallion-ecom> (connected as a Databricks Git folder) |
 
-**Trial vs Free Edition.**
-- **Free Edition** is a permanently free, quota-limited, serverless-only workspace for learning. It has no credits, no account console and no upgrade path, and several enterprise features are limited or unavailable.
-- The **free trial** is the full commercial platform for 14 days with a credit allowance. It includes Unity Catalog administration, SQL warehouses, Lakeflow Jobs, AI/BI, Genie and partner connectors such as Power BI, and it can be upgraded to a paid account.
-- This assignment needs governance, a SQL warehouse endpoint for Power BI and job orchestration, so it targets the trial.
+The trial was chosen over Free Edition because the project needs Unity Catalog administration, a SQL warehouse endpoint for Power BI, and Lakeflow Jobs. Serverless notebooks suit the batch ETL work and bill only while code runs. One small warehouse serves all BI consumers. The job has no schedule, Power BI uses Import mode, and the warehouse auto-stops.
 
-**Compute choice and credit saving.**
-- *ETL* runs on serverless notebooks. They start in seconds, need no sizing, and bill only while code runs. The PySpark notebooks (hashing, window functions, joins over 2 M rows) are batch work that suits this.
-- *BI* runs on one small serverless SQL warehouse. It is the governed SQL endpoint that the dashboard, Genie and Power BI share. Its auto-stop is set to the minimum.
-- *Saving credits:* no classic clusters, no parallel experiments, the job has no schedule, Power BI uses Import (the warehouse sleeps between refreshes), and the warehouse is stopped after each session.
-
-**Observed restrictions:** see §10.
-
-### Unity Catalog setup & naming standard
-Setup SQL: [`sql/00_setup.sql`](sql/00_setup.sql) (also [`notebooks/01_setup.py`](notebooks/01_setup.py)).
+### Naming
 
 | Object | Pattern | Example |
 |---|---|---|
-| Catalog | dedicated project catalog, created by `01_setup` | `ecom_catalog` |
-| Schema | `<domain>_<purpose>` | `ecom_poc` |
-| Landing volume | managed volume `raw_files` | `/Volumes/ecom_catalog/ecom_poc/raw_files/` |
-| Tables | `<layer>_<entity>` | `bronze_orders`, `silver_transactions`, `gold_daily_sales` |
-| Rejected / duplicate outcomes | `silver_<entity>_quarantine` / `_duplicates` | `silver_orders_quarantine` |
-| Reference / ops tables | `ref_<what>`, `ops_<what>` | `ref_fx_rates`, `ops_bronze_load_log` |
+| Tables | `<layer>_<entity>` | `bronze_orders`, `gold_daily_sales` |
+| Rejected / duplicate rows | `silver_<entity>_quarantine`, `_duplicates` | `silver_orders_quarantine` |
+| Reference / operational tables | `ref_<name>`, `ops_<name>` | `ref_fx_rates`, `ops_bronze_load_log` |
 
-Exact raw-file paths: `/Volumes/ecom_catalog/ecom_poc/raw_files/orders.csv` and `/Volumes/ecom_catalog/ecom_poc/raw_files/transactions.csv`.
-Because the layer is the table prefix, anyone browsing the catalog can see a table's trust level without opening it. The catalog name is a single widget or job parameter (`catalog`), so the project can move to another catalog.
+The catalog name is a single notebook and job parameter (`catalog`).
 
-### Git integration
-- Repository: <https://github.com/morshed11s/databricks-medallion-ecom>. Connected as a **Databricks Git folder**.
-- There is one commit per project stage (scaffold/generator → setup → Bronze → Silver/Gold → AI/BI → Power BI → operations → README); see `git log`.
-- Notebooks are stored in Databricks source format (`.py`), so diffs are reviewable.
+### Design principles
 
-### SQL & query strategy
-- **Transformations in notebooks, on serverless.** Bronze and Silver are PySpark (file hashing, safe parsing, window dedup, fail-fast assertions). Gold is Spark SQL `CREATE OR REPLACE TABLE … AS SELECT`. Every notebook can be safely re-run and stops on a failed invariant.
-- **Each rule is defined once.**
-  - Validation rules exist only in `04_silver` and are materialised as `ref_dq_rules`.
-  - The revenue rule exists only in `gold_fact_orders.revenue_usd`.
-  - Marts, dashboards, Genie and Power BI only `SUM(revenue_usd)`. None of them re-derive revenue.
-- **One governed query layer.** A single SQL warehouse serves the AI/BI dashboard, Genie and Power BI, and grants restrict consumers to Gold (`sql/08_grants.sql`).
-- **Correct re-aggregation.**
-  - Rates are stored with their numerator and denominator and re-aggregated as `SUM/SUM`, never `AVG(rate)`.
-  - Money is `DECIMAL`, so totals don't drift.
-  - Dates are `DATE`, so date-range filters match across tools.
-- **Verification SQL is separate from the pipeline** (`sql/`). The landing, Bronze and Silver checks are reproducible queries. The trusted metric queries are the reference for BI cross-checks. [`sql/10_quality_assertions.sql`](sql/10_quality_assertions.sql) re-checks every invariant with `assert_true` and fails loudly.
-- **Names are fully qualified** (`ecom_catalog.ecom_poc.<table>`), and the catalog is a single notebook/job parameter.
+- Each rule is defined once. Validation rules live in `04_silver` (materialised as `ref_dq_rules`). Revenue is defined only in `gold_fact_orders.revenue_usd`; downstream tools sum that column and never re-derive it.
+- Rates are stored with numerator and denominator and re-aggregated as `SUM/SUM`, never `AVG(rate)`.
+- Money is `DECIMAL` and dates are `DATE`.
+- Every notebook is safe to re-run and stops on a failed invariant. [`sql/10_quality_assertions.sql`](sql/10_quality_assertions.sql) re-checks them independently.
 
-## 3. Synthetic source files
-### Generator & dirty-data inventory
-[`generator/generate_data.py`](generator/generate_data.py) uses only the Python standard library and seed **42**. It writes exactly **1,000,000 data rows + header** per file, and the same seed always produces the same bytes (sha256 in [`generator/manifest.json`](generator/manifest.json)). Each row gets at most one injected anomaly, so the inventory is exact: [`generator/dirty_data_report.md`](generator/dirty_data_report.md).
+## Source data
 
-| Category (minimum required) | orders.csv | transactions.csv |
+[`generator/generate_data.py`](generator/generate_data.py) uses only the Python standard library and seed 42. It writes 1,000,000 data rows per file, and the same seed always yields identical bytes (sha256 in [`generator/manifest.json`](generator/manifest.json)). Each row carries at most one injected anomaly, so counts are exact. Full inventory: [`generator/dirty_data_report.md`](generator/dirty_data_report.md).
+
+| Anomaly | orders.csv | transactions.csv |
 |---|---|---|
-| Null / blank values | 10,119 (all 8 fields) | 9,888 (all 7 fields) |
-| Text inside numeric fields | 8,051 (quantity, unit_price) | 8,104 (amount) |
-| Negative / out-of-range numbers | 7,947 | 7,008 |
-| Invalid / future timestamps | 3,973 invalid + 3,003 future | 4,021 invalid + 2,920 future |
-| Inconsistent case / whitespace | 29,834 | 29,662 |
-| Duplicate rows / keys | 5,001 exact + 4,862 key conflicts | 4,993 exact + 4,985 key conflicts |
+| Null or blank values | 10,119 | 9,888 |
+| Text in numeric fields | 8,051 | 8,104 |
+| Negative or out-of-range numbers | 7,947 | 7,008 |
+| Invalid timestamps / future timestamps | 3,973 / 3,003 | 4,021 / 2,920 |
+| Inconsistent case or whitespace | 29,834 | 29,662 |
+| Exact duplicates / key conflicts | 5,001 / 4,862 | 4,993 / 4,985 |
 | Invalid status labels | 2,939 | 2,028 |
 | Orphan order IDs | n/a | 10,216 |
 | Unsupported currency | n/a | 4,027 |
-| **Total anomalous rows** | **75,729 (7.57 %)** | **87,852 (8.79 %)** |
+| **Total anomalous rows** | **75,729 (7.57%)** | **87,852 (8.79%)** |
 
-**Why anomalies must be a small, measured fraction:**
-1. *Realism.* Production extracts are mostly correct. If half the rows were broken, Gold metrics would describe the noise, not the business.
-2. *Testability.* Every count is known in advance, so Silver's quarantine and duplicate numbers can be checked against the generator (notebook 04 does this) and a rule that is too strict or too loose shows up as a mismatch.
-3. *Attribution.* At one anomaly per row and low rates, each rejection reason can be traced to a single injected cause.
-4. *Analytics stay useful.* About 95 % of orders survive, so trends and breakdowns remain meaningful.
+Anomalies are kept to a small, measured share so the data resembles production extracts, Silver's rejection counts can be verified against the generator, and the remaining rows still support meaningful analytics.
 
-### Upload: row counts, bytes, volume paths
-Uploaded via **New → Add or upload data → Upload files to a volume**. Reproducible counts: [`sql/01_landing_row_counts.sql`](sql/01_landing_row_counts.sql) and [`notebooks/02_landing_checks.py`](notebooks/02_landing_checks.py), which also compares sha256 with the manifest and logs to `ops_landing_file_log`.
+| File | Rows | Bytes |
+|---|---|---|
+| orders.csv | 1,000,000 | 66,468,913 |
+| transactions.csv | 1,000,000 | 71,233,922 |
 
-| File | Volume path | Data rows (excl. header) | Bytes | sha256 |
-|---|---|---|---|---|
-| orders.csv | `/Volumes/ecom_catalog/ecom_poc/raw_files/orders.csv` | 1,000,000 | 66,468,913 | checked against `generator/manifest.json` by `02_landing_checks` |
-| transactions.csv | `/Volumes/ecom_catalog/ecom_poc/raw_files/transactions.csv` | 1,000,000 | 71,233,922 | checked against `generator/manifest.json` by `02_landing_checks` |
+`02_landing_checks` verifies each uploaded file's sha256 against the manifest and records the result in `ops_landing_file_log`.
 
-### Why real data, credentials and raw extracts must not be in Git
-Git history is permanent and gets copied to every clone, fork, CI cache and backup. Deleting a file later does not remove it from history.
-- **Real customer data** in a repo is a personal-data breach (GDPR and similar laws). It escapes all access control, auditing and retention rules.
-- **Credentials** pushed to a remote are scraped by bots within minutes and can be used to read data or run up compute bills.
-- **Raw extracts** are large, are often sensitive, and belong in governed storage (a UC volume) with access control and audit logs, not in version control. Git is for code and small metadata.
+### Repository hygiene
 
-Controls applied here: [`.gitignore`](.gitignore) excludes `*.csv`, `*.parquet`, `.env`, `*token*` and `.databrickscfg`, and only synthetic data is used.
+Real data, credentials and raw extracts do not belong in Git: history is permanent, copied to every clone, and cannot be fully retracted. [`.gitignore`](.gitignore) excludes CSV and Parquet files, `.env`, token files and `.databrickscfg`, and only synthetic data is used. For production, add secret scanning with push protection, store secrets in Databricks secret scopes or use OAuth service principals, restrict non-production environments to synthetic or masked data, and protect the main branch with required review.
 
-**Minimum production controls:**
-- secret scanning with push protection on the Git host, plus a pre-commit scanner (e.g. gitleaks);
-- secrets kept in Databricks secret scopes, or OAuth/service principals instead of personal tokens;
-- non-production environments use synthetic or masked data only;
-- source data lives in Unity Catalog storage with least-privilege grants and audit logs;
-- protected main branch with mandatory review;
-- a documented process to rotate any credential that is ever exposed.
+## Bronze
 
-## 4. Bronze — lossless ingestion
 Notebook: [`notebooks/03_bronze.py`](notebooks/03_bronze.py). Checks: [`sql/02_bronze_checks.sql`](sql/02_bronze_checks.sql).
 
-- **All source fields are STRING with an explicit schema** (`inferSchema=false`). `"two"`, `"12,50"`, `"2026-02-30"` and `" completed "` arrive exactly as sent. A structurally broken line fails the load (`FAILFAST`) instead of being silently dropped.
-- **Why malformed data belongs in Bronze:** Bronze answers *"what did we receive?"*. Rejecting rows on load would destroy the evidence. You could no longer count bad rows, explain them, return them to the source owner, or reprocess them after a rule changes. Deciding *"what do we trust?"* is Silver's job, and Silver records every rejection with a reason.
+All source fields are loaded as STRING with an explicit schema (no inference). Malformed values arrive exactly as sent, and a structurally broken line fails the load (`FAILFAST`) rather than being dropped. Keeping bad values lets the team count them, explain them, return them to the source owner and reprocess after a rule change.
 
-| Audit column | Meaning |
+| Column | Purpose |
 |---|---|
-| `_ingested_at` | Timestamp of the load run: when the data entered the lakehouse |
-| `_source_file` | Full volume path of the CSV: lineage back to the landing zone |
-| `_source_line` | 1-based data-row number in the file: points to the exact raw line and gives a stable order (used by dedup) |
-| `_batch_id` | `<file>:<sha256 prefix of file content>`: same content means same batch, the idempotency key |
-| `_row_hash` | sha256 of all source columns (NULL-aware): equal hash means an exact duplicate row |
-| `_bronze_row_id` | `<_batch_id>#<_source_line>`: unique, stable row id carried into **every** Silver outcome |
+| `_ingested_at` | Load timestamp |
+| `_source_file` | Volume path of the source CSV |
+| `_source_line` | 1-based data row number in the file |
+| `_batch_id` | `<file>:<sha256 prefix>`; same content gives the same batch (idempotency key) |
+| `_row_hash` | sha256 of all source columns; equal hash means an exact duplicate |
+| `_bronze_row_id` | `<_batch_id>#<_source_line>`; unique id carried into every Silver outcome |
 
-**Lossless proof:** the notebook counts the file's data lines, counts the Bronze rows for that batch, writes both to `ops_bronze_load_log`, and fails if they differ.
+The notebook compares the file's line count with the Bronze row count for the batch and fails on a mismatch. Writes use Delta `replaceWhere _batch_id = ...`, so re-running the same file replaces the batch instead of appending to it. A file with different content becomes a new batch.
 
-**Idempotent re-runs:** the write is a Delta overwrite with `replaceWhere _batch_id = '<this batch>'`. Re-running with the same file *replaces* that batch instead of appending it again, so a second run leaves the count at 1,000,000 (shown by the second row in `ops_bronze_load_log`). A file with *different* content gets a new `_batch_id` and is loaded as a new batch, as it should be.
+## Silver
 
-## 5. Silver — cleaning, validation & reconciliation
 Notebook: [`notebooks/04_silver.py`](notebooks/04_silver.py). Checks: [`sql/03_silver_checks.sql`](sql/03_silver_checks.sql).
 
-### Processing precedence
-1. **Standardise:** trim; upper-case codes; `''`, `NULL` and `None` → missing. Case and whitespace problems are *fixed*, not rejected.
-2. **Safe parse:** `try_cast` / `try_to_timestamp` with strict formats (`yyyy-MM-dd`, `yyyy-MM-dd HH:mm:ss`).
-3. **Validate:** every rule is evaluated and **all** failures go into `rejection_reasons`. Any failure means quarantine.
-4. **Deduplicate valid rows only:** one deterministic winner per key. The other valid rows are duplicate losers.
+Processing order:
 
-Because validation comes first, a row that is both invalid and a duplicate counts once, in quarantine. That makes the three outcomes a true partition of Bronze.
+1. **Standardise.** Trim, upper-case codes, treat empty strings as missing. Case and whitespace issues are corrected, not rejected.
+2. **Parse safely.** `try_cast` and `try_to_timestamp` with strict formats return NULL instead of failing. The raw string is kept beside the parsed value.
+3. **Validate.** All rules are evaluated and every failure is recorded in `rejection_reasons`. Any failure sends the row to quarantine.
+4. **Deduplicate valid rows only.** One deterministic winner per key.
 
-### Safe type conversion
-**What happens to unparseable strings?** `try_cast('two' AS INT)` returns **NULL** instead of an error, so the job never crashes on bad data and never stores a wrong value. Silver keeps the original string next to the parsed value. A "present but parsed to NULL" value fails the matching *type* rule (e.g. `invalid_quantity`), and the row goes to quarantine with the raw text intact. Before/after examples are displayed by `notebooks/04_silver`.
+Because validation precedes deduplication, a row that is both invalid and duplicated is counted once, in quarantine. The three outcomes therefore partition Bronze.
 
-### Business-rule matrix
-Stored as table `ref_dq_rules`. Row counts per rule are in `ops_silver_rule_counts`.
+### Validation rules
 
-| Dataset | Rule id | Field | Type | Rule |
-|---|---|---|---|---|
-| orders | `missing_<field>` (×8) | every column | mandatory | present, not blank/NULL |
-| orders | `invalid_order_date` | order_date | type | real date, `yyyy-MM-dd` |
-| orders | `future_order_date` | order_date | range | not after processing date |
-| orders | `invalid_quantity` / `quantity_out_of_range` | quantity | type / range | whole number, 1–100 |
-| orders | `invalid_unit_price` / `unit_price_out_of_range` | unit_price | type / range | plain decimal, 0 < price ≤ 100,000 |
-| orders | `invalid_category` | category | allowed values | 8 categories (case-insensitive) |
-| orders | `invalid_order_status` | order_status | allowed values | COMPLETED, SHIPPED, PENDING, CANCELLED, RETURNED |
-| orders | `invalid_country` | country | allowed values | US, GB, DE, FR, IN, CA, AU, BD, NL, ES |
-| transactions | `missing_<field>` (×7) | every column | mandatory | present, not blank/NULL |
-| transactions | `invalid_amount` / `amount_out_of_range` | amount | type / range | plain decimal, 0 < amount ≤ 1,000,000 |
-| transactions | `invalid_txn_ts` / `future_txn_ts` | txn_ts | type / range | real timestamp, not in the future |
-| transactions | `unsupported_currency` | currency | allowed values | USD, EUR, GBP (`ref_fx_rates`) |
-| transactions | `invalid_payment_method` | payment_method | allowed values | CARD, PAYPAL, WALLET, BANK_TRANSFER, COD |
-| transactions | `invalid_txn_status` | txn_status | allowed values | SUCCESS, FAILED, PENDING, REFUNDED |
-| transactions | `orphan_order_id` | order_id | relationship | must exist in accepted `silver_orders` |
+Stored in `ref_dq_rules`; per-rule counts in `ops_silver_rule_counts`.
 
-The orphan check is against *accepted* orders, so a payment for a quarantined order is also quarantined. Otherwise Gold could count payments for orders it cannot report.
+| Dataset | Rules |
+|---|---|
+| orders | all 8 fields mandatory; `order_date` valid and not in the future; `quantity` whole number 1-100; `unit_price` decimal in (0, 100,000]; `category` one of 8 values; `order_status` in COMPLETED, SHIPPED, PENDING, CANCELLED, RETURNED; `country` in US, GB, DE, FR, IN, CA, AU, BD, NL, ES |
+| transactions | all 7 fields mandatory; `amount` decimal in (0, 1,000,000]; `txn_ts` valid and not in the future; `currency` in USD, EUR, GBP; `payment_method` in CARD, PAYPAL, WALLET, BANK_TRANSFER, COD; `txn_status` in SUCCESS, FAILED, PENDING, REFUNDED; `order_id` must exist in accepted `silver_orders` |
 
-### Deterministic deduplication
-| Dataset | Key | Keep-one rule |
+The orphan check uses accepted orders, so a payment for a quarantined order is also quarantined.
+
+### Deduplication
+
+| Dataset | Key | Winner |
 |---|---|---|
-| orders | `order_id` | `ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY _source_line DESC) = 1`: the latest line in the extract is the latest version of the order |
-| transactions | `txn_id` | `ROW_NUMBER() OVER (PARTITION BY txn_id ORDER BY txn_ts DESC, _source_line DESC) = 1`: the latest payment status wins, with ties broken by line |
+| orders | `order_id` | Latest `_source_line` |
+| transactions | `txn_id` | Latest `txn_ts`, ties broken by latest `_source_line` |
 
-Both orderings are total (`_source_line` is unique), so the same input always produces the same winners. Each loser stores `winner_bronze_row_id` and a `duplicate_type`:
-- **`exact_row_duplicate`:** same `_row_hash` as the winner, so every raw field is identical (e.g. a file resent twice).
-- **`key_conflict`:** same business key, different content (e.g. a status update). This is a real data conflict that the keep rule resolves.
+Both orderings are total, so results are deterministic. Each loser records its `winner_bronze_row_id` and a `duplicate_type`: `exact_row_duplicate` (same `_row_hash`) or `key_conflict` (same key, different content).
 
-### Quarantine & reconciliation
-Invalid rows are written to `silver_<ds>_quarantine` with the raw values, `rejection_reasons` (an array) and all lineage columns. Losers go to `silver_<ds>_duplicates`. Nothing is deleted. The notebook proves the partition with `_bronze_row_id` and stores it in `ops_silver_reconciliation`:
-- the counts add up;
-- no id appears in more than one outcome;
-- no Bronze id is unassigned;
-- no outcome id is unknown.
+### Reconciliation
 
-| Dataset | Bronze | Accepted | Quarantined | Duplicate losers | Sum | Overlap | Balanced |
-|---|---|---|---|---|---|---|---|
-| orders (expected from generator) | 1,000,000 | 954,105 | 36,032 | 9,863 | 1,000,000 | 0 | Yes |
-| transactions (expected from generator) | 1,000,000 | 941,810 | 48,212 | 9,978 | 1,000,000 | 0 | Yes |
+`ops_silver_reconciliation` proves, by `_bronze_row_id`, that counts add up, no id appears in two outcomes, and no Bronze id is unassigned.
 
-## 6. Gold — business-ready models
-Notebook: [`notebooks/05_gold.py`](notebooks/05_gold.py). Metric SQL: [`sql/04_gold_metrics.sql`](sql/04_gold_metrics.sql).
+| Dataset | Bronze | Accepted | Quarantined | Duplicates | Overlap |
+|---|---|---|---|---|---|
+| orders | 1,000,000 | 954,105 | 36,032 | 9,863 | 0 |
+| transactions | 1,000,000 | 941,810 | 48,212 | 9,978 | 0 |
+
+## Gold
+
+Notebook: [`notebooks/05_gold.py`](notebooks/05_gold.py). Metric queries: [`sql/04_gold_metrics.sql`](sql/04_gold_metrics.sql).
 
 ### Revenue definition
-**Revenue (USD)** = the order value (`quantity × unit_price`) of every order where:
-1. `order_status` is **COMPLETED** or **SHIPPED**. CANCELLED and RETURNED (refunded) orders earn nothing; PENDING is not yet earned.
-2. The order is **fully paid**: the sum of its **SUCCESS** payments, converted to USD, is ≥ the order value (0.05 USD tolerance for FX rounding).
 
-- **Payments:** FAILED/PENDING attempts never count. REFUNDED payments don't count as paid.
-- **Partial (split) payments** are added together.
-- **Repeat charges** can't inflate revenue, because revenue is the *order value*, not the payment sum. The excess is shown separately as `overpaid_usd`.
-- **Currency:** EUR/GBP payments are converted with `ref_fx_rates`. Revenue is reported in **USD**.
-- **Revenue date:** `order_date`.
-- **Source of truth:** `gold_fact_orders.revenue_usd`. Every mart, the dashboard, Genie and Power BI **sum this one column**.
+Revenue (USD) is the order value (`quantity * unit_price`) of each order that meets both conditions:
+
+1. `order_status` is COMPLETED or SHIPPED.
+2. The order is fully paid: its SUCCESS payments, converted to USD with `ref_fx_rates`, sum to at least the order value (0.05 USD tolerance for FX rounding).
+
+Failed, pending and refunded payments do not count as paid. Split payments are summed. Repeat charges cannot inflate revenue because revenue uses order value rather than payment totals; the excess is reported as `overpaid_usd`. Revenue is dated by `order_date`.
 
 | Order | Status | Value | Successful payments | Revenue |
 |---|---|---|---|---|
-| A | COMPLETED | 100.00 | 100.00 | **100.00** |
-| B | COMPLETED | 100.00 | 50.00 + 50.00 (split) | **100.00** |
-| C | SHIPPED | 100.00 | 100.00 + 100.00 (repeat) | **100.00** (overpaid 100.00) |
-| D | COMPLETED | 100.00 | FAILED, then 100.00 | **100.00** |
-| E | CANCELLED | 100.00 | REFUNDED | **0** |
-| F | COMPLETED | 100.00 | none | **0** (unpaid) |
+| A | COMPLETED | 100 | 100 | 100 |
+| B | COMPLETED | 100 | 50 + 50 | 100 |
+| C | SHIPPED | 100 | 100 + 100 | 100 (overpaid 100) |
+| D | COMPLETED | 100 | FAILED, then 100 | 100 |
+| E | CANCELLED | 100 | REFUNDED | 0 |
+| F | COMPLETED | 100 | none | 0 |
 
-### Gold datasets (grain, key, assumptions)
-**Avoiding fan-out:** transactions are aggregated to one row per `order_id` **before** the join, so the join is 1:1. The notebook checks that `gold_fact_orders` has exactly as many rows as `silver_orders`, and that total revenue is identical across all marts.
+### Tables
 
-| Table | Grain | Unique key | Main measures / assumptions |
+Payments are aggregated to one row per order before joining, which prevents fan-out. The notebook asserts that `gold_fact_orders` has the same row count as `silver_orders` and that revenue is identical across all marts.
+
+| Table | Grain | Key | Notes |
 |---|---|---|---|
 | `gold_fact_orders` | order | `order_id` | `revenue_usd`, `paid_usd`, `is_revenue_eligible`, `overpaid_usd` |
-| `gold_daily_sales` | day | `order_date` | revenue, orders, `cancellation_rate` (re-aggregate as Σcancelled/Σorders) |
-| `gold_revenue_breakdown` | day × category × country | `(order_date, category, country)` | revenue, units, orders |
-| `gold_payment_success` | payment day × method | `(txn_date, payment_method)` | `success_rate = SUCCESS/(SUCCESS+FAILED)`; PENDING (not final) and REFUNDED excluded |
-| `gold_top_customers` | customer (lifetime) | `customer_id` | revenue, AOV, `spend_rank` (ties → customer_id); not date-filterable |
+| `gold_daily_sales` | day | `order_date` | Revenue, orders, cancellation counts |
+| `gold_revenue_breakdown` | day, category, country | `(order_date, category, country)` | Revenue, units, orders |
+| `gold_payment_success` | payment day, method | `(txn_date, payment_method)` | Success rate = SUCCESS / (SUCCESS + FAILED); pending and refunded excluded |
+| `gold_top_customers` | customer, lifetime | `customer_id` | Revenue, AOV, rank; not date-filterable |
 
-Row counts and sample output are displayed by `notebooks/05_gold`.
+Table and column comments and informational primary keys are written to Unity Catalog, so they appear in Catalog Explorer, Genie and BI tools.
 
-**Documentation:** table and column comments are written to Unity Catalog (`COMMENT ON TABLE` / `ALTER COLUMN … COMMENT`), and informational primary keys are declared. The comments show up in Catalog Explorer, Genie and BI tools, and they prevent the usual misreadings:
-- averaging a stored rate instead of re-aggregating it;
-- adding `paid_usd` instead of `revenue_usd`;
-- filtering the lifetime customer ranking by date;
-- double-counting by joining at the wrong grain.
+## AI/BI dashboard and Genie
 
-## 7. Databricks AI/BI
-### Dashboard
-Spec and dataset SQL: [`dashboards/README.md`](dashboards/README.md), [`sql/05_dashboard_datasets.sql`](sql/05_dashboard_datasets.sql).
-- **5 KPI counters:** revenue, revenue orders, AOV, cancellation rate, payment success rate.
-- **1 trend:** weekly revenue.
-- **3 breakdowns:** category, country, payment method.
-- **Top-customer table.**
-- **Shared filters:** a global **date range** (mapped to `order_date` / `txn_date`) plus category and country.
+Both read the Gold tables only, through the shared warehouse.
 
+**Dashboard: "E-Commerce Sales & Payments".** Datasets: [`sql/05_dashboard_datasets.sql`](sql/05_dashboard_datasets.sql). It has KPI counters (revenue, orders, average order value, cancellation rate, payment success rate), a revenue trend, breakdowns by category, country and payment method, and global filters for date, category and country. Ratios are computed as `SUM/SUM` so they remain correct under filters. The category and country filters apply to revenue widgets only, and the top-customers table is lifetime.
 
-### Genie Agent
-Setup, instructions and question checks: [`dashboards/genie.md`](dashboards/genie.md). Verification SQL: [`sql/06_genie_verification.sql`](sql/06_genie_verification.sql).
+![AI/BI dashboard](genie/dashboard/gold_analytics.png)
 
-Questions checked against trusted SQL:
-1. Total revenue in Q1 2026.
-2. Payment method with the highest success rate.
-3. Top 3 categories by revenue in Germany.
+**Genie agent: "E-commerce Gold Analyst".** Configured over the five Gold tables with instructions that revenue is `SUM(revenue_usd)`, rates are ratios of sums, `country` holds ISO-2 codes, and lifetime customer data is not date-filterable. Reference queries for checking its answers are in [`sql/06_genie_verification.sql`](sql/06_genie_verification.sql).
 
-## 8. Power BI Desktop
-Guide: [`powerbi/README.md`](powerbi/README.md). Measures: [`powerbi/measures.dax`](powerbi/measures.dax). Report: `powerbi/ecom_sales_report.pbix`.
+![Genie agent](genie/genie_QnA.png)
 
-- **Connection:** native Databricks connector to the SQL warehouse in **Import** mode.
-- **Why Import over DirectQuery:** the Gold marts are small and change once per pipeline run. Import gives fast visuals and lets the warehouse auto-stop. DirectQuery would keep the warehouse running for every interaction and only pays off for live or very large data.
-- **Measures:** Total Revenue, Revenue Orders, AOV, Units Sold, Cancellation Rate, Payment Success Rate. They use the same definitions as the dashboard.
+## Power BI
 
-### Revenue cross-check (SQL vs AI/BI vs Power BI)
-Scope for all three: **order_date 2026-01-01 – 2026-06-30, USD, no category/country filter**. Query: [`sql/07_cross_tool_revenue_check.sql`](sql/07_cross_tool_revenue_check.sql).
+Measures: [`powerbi/measures.dax`](powerbi/measures.dax). Report: [`powerbi/PowerBi_Report.pbix`](powerbi/PowerBi_Report.pbix).
 
-| Tool | Where |
+![Power BI report](powerbi/PowerBi_Report.png)
+
+The report connects with the native Databricks connector in **Import** mode, using the warehouse's server hostname and HTTP path. Import suits small Gold aggregates that change once per pipeline run: interactions are fast and the warehouse can auto-stop, whereas DirectQuery would keep it running and is only warranted for near-real-time or very large data. Access tokens are never committed.
+
+The model uses a calculated `Date` table related to `order_date` and `txn_date`, dates typed as Date, and money as fixed decimal. Six measures (Total Revenue, Revenue Orders, Avg Order Value, Units Sold, Cancellation Rate, Payment Success Rate) mirror the dashboard definitions.
+
+### Cross-tool check
+
+All three tools sum `revenue_usd`. Query: [`sql/07_cross_tool_revenue_check.sql`](sql/07_cross_tool_revenue_check.sql).
+
+| Measure | AI/BI dashboard | Power BI |
+|---|---|---|
+| Total revenue (USD) | 366.13M | 366.13M |
+| Average order value | 524.73 | 524.73 |
+| Cancellation rate | 9.08% | 9.08% |
+
+If figures differ, check in order: date filter mismatch, residual category or country filter, date columns imported as datetime or shifted by timezone, floating-point instead of fixed decimal, a stale Import refresh, or a different revenue definition.
+
+## Orchestration and access control
+
+**Lakeflow Job** ([`lakehouse/lakeflow_job.yaml`](lakehouse/lakeflow_job.yaml)): `landing_checks` -> `bronze` -> `silver` -> `gold` on serverless compute.
+
+![Job graph](lakehouse/pipeline_flow.png)
+
+| Setting | Value |
 |---|---|
-| Databricks SQL | first query in `07_cross_tool_revenue_check.sql` |
-| AI/BI dashboard | KPI K1 with the date filter set |
-| Power BI | Total Revenue card with the date slicer set |
+| `landing_checks` | No retry; fails on a missing file or sha256 mismatch |
+| `bronze`, `silver`, `gold` | One retry after 2 minutes; all tasks are safe to re-run |
+| Timeouts | 30 min landing and Gold, 60 min Bronze and Silver, 2 h job |
+| Duration warning | 30 minutes |
+| Concurrency | Queue enabled, one run at a time |
+| Notifications | Email on start, success, failure and duration warning |
+| Trigger | None (manual runs only) |
 
-**Diagnosing a mismatch.** All three tools sum the same column, so a difference can only come from scope or typing. Check these in order:
-1. The date filter isn't the same, or isn't inclusive.
-2. A category or country filter is still applied.
-3. A Power BI date column was imported as datetime, or shifted by timezone (fix: type **Date**).
-4. Floating-point type instead of fixed decimal.
-5. A stale Import refresh after a job re-run (fix: refresh).
-6. Someone used a different definition. The last query in `sql/07` shows how far "sum of payments" or "all orders" would drift.
+Each task runs only if its upstream tasks succeed, so a failed Silver reconciliation prevents Gold from rebuilding on incomplete data, and the last good Gold tables remain in place. Two complete runs succeeded (about 10.5 minutes each).
 
-The monthly-split query in `sql/07` narrows down which month disagrees.
+![Run history](lakehouse/lakehouse_job.png)
 
-## 9. Lakeflow Jobs, security & cleanup
-Details: [`operations/README.md`](operations/README.md). Job definition: [`operations/lakeflow_job.json`](operations/lakeflow_job.json). Grants: [`sql/08_grants.sql`](sql/08_grants.sql). Credits: [`sql/09_credit_usage.sql`](sql/09_credit_usage.sql).
+**Least-privilege access** ([`sql/08_grants.sql`](sql/08_grants.sql)): the `ecom_reporting` group receives `USE CATALOG`, `USE SCHEMA` and `SELECT` on the five Gold tables, plus warehouse access. It has no access to Bronze, Silver, ops tables or the landing volume. The pipeline owner retains full rights.
 
-- **Job graph:** `landing_checks → bronze → silver → gold` on serverless.
-  - Retry once after 2 min (every task can safely re-run).
-  - No retry for landing checks.
-  - Timeouts, max 1 concurrent run, failure email.
-  - **No schedule.**
-- **Why Gold stops after a failed dependency:** the default *Run if = All succeeded* marks Gold *Upstream failed*. Gold therefore never republishes marts from incomplete or unreconciled Silver tables, and the last good Gold stays in place for the dashboards.
-- **Least privilege:** group `ecom_reporting` gets USE CATALOG, USE SCHEMA, SELECT on the five Gold tables only, and *Can use* on the warehouse. It gets nothing on Bronze, Silver, ops tables or the raw volume. Testing: as a group member, a Gold query succeeds and a Silver/Bronze/volume access returns `PERMISSION_DENIED`.
-- **Cleanup:** stop the warehouse, confirm no schedules, revoke the Power BI token, export the dashboard and `.pbix`, record credits, and push all commits. Checklist in `operations/README.md` §3.
+## Trial limitations
 
-## 10. Trial limitations & fallbacks
-| Area | Observed | Fallback applied |
-|---|---|---|
-| Catalog creation | `01_setup` runs `CREATE CATALOG IF NOT EXISTS ecom_catalog` | If SQL creation is blocked, create it in Catalog Explorer with default storage. The catalog is a parameter; only the SQL helper files hard-code it |
+| Area | Status |
+|---|---|
+| Catalog creation | `01_setup` runs `CREATE CATALOG IF NOT EXISTS`; if blocked, create it in Catalog Explorer |
+| Serverless notebooks, Lakeflow Jobs, AI/BI, Genie, email notifications | Available and used |
+| Reporting group and extra users | Not verified; `sql/08_grants.sql` is the intended grant set |
 
-## 11. Requirement traceability
-Status: **Repo** = implemented and committed. **Run** = needs execution in the trial workspace.
+## Reproducing the project
 
-| Brief requirement | Where it is met | Status |
-|---|---|---|
-| Own-email trial; cloud, region, dates, compute, restrictions; trial vs Free Edition | §2, §10 | Repo done · Run |
-| `ecom_catalog` catalog, `ecom_poc` schema + managed `raw_files` volume; naming standard; exact path | §2 · `sql/00_setup.sql` · `notebooks/01_setup` | Done |
-| Notebook compute + SQL warehouse; ETL vs BI reason; credit saving | §2 | Done |
-| Git folder; repo URL; commit per stage | §2 · `git log` | Done |
-| 1,000,000 rows per file; ≥5 dirty categories; inventory; why small fraction | §3 · `generator/` | Done |
-| Upload; exact rows, bytes, path; reproducible count | §3 · `sql/01` · `notebooks/02` | Repo done · Run |
-| Why no real data / credentials / extracts in Git; production controls; `.gitignore` | §3 · `.gitignore` | Done |
-| Bronze: one Delta table per CSV, all STRING, no inference; why keep malformed rows | §4 · `notebooks/03` | Repo done · Run |
-| Audit fields `_ingested_at`, `_source_file`, `_batch_id`, `_row_hash` explained | §4 | Done |
-| Lossless source = Bronze; idempotent re-run | §4 · `ops_bronze_load_log` · `sql/02` | Repo done · Run (run Bronze twice) |
-| Safe parsing (`try_cast`); what happens to unparseable strings; before/after | §5 · `notebooks/04` | Repo done · Run |
-| Rule matrix (ranges, mandatory, statuses, currencies, non-future, orphans); counts by rule | §5 · `ref_dq_rules` · `ops_silver_rule_counts` | Repo done · Run |
-| Deterministic dedup; keep-one rule; exact rows vs key conflicts; winners/losers | §5 · `notebooks/04` · `sql/03` | Repo done · Run |
-| Quarantine with `rejection_reasons`; Bronze = accepted + quarantined + losers, no overlap | §5 · `ops_silver_reconciliation` · `sql/03`, `sql/10` | Repo done · Run |
-| Revenue definition (statuses, currency, refunds, partial/repeat payments, source of truth) + example | §6 · `notebooks/05` | Done |
-| ≥4 Gold datasets; no fan-out; table list, row counts, samples | §6 · `notebooks/05` | Repo done · Run |
-| Table/column descriptions; grain, key, assumptions; why it prevents misreading | §6 · UC comments | Repo done · Run |
-| AI/BI dashboard: ≥4 KPIs, 1 trend, 2 breakdowns, 1 shared filter; link or export | §7 · `dashboards/README.md` | Spec done · Run |
-| Genie: 3 questions cross-checked with SQL, or documented fallback | §7 · `dashboards/genie.md` · `sql/06` | Spec done · Run |
-| Power BI native connector, Import; Import vs DirectQuery; connection settings (secrets masked) | §8 · `powerbi/README.md` | Repo done · Run |
-| ≥4 measures; one-page report (KPI cards, trend, category chart, slicers); `.pbix` | §8 · `powerbi/measures.dax` | Spec done · Run |
-| Same revenue in SQL, AI/BI and Power BI under identical filters; mismatch diagnosis | §8 · `sql/07` | Repo done · Run |
-| Lakeflow Job Bronze → Silver → Gold; dependencies, retries, failure notification; one successful run; schedule disabled; why Gold stops | §9 · `operations/` | Repo done · Run |
-| Least-privilege Gold-only access; executable grants; test plan | §9 · `sql/08` | Repo done · Run |
-| Cleanup: stop warehouse, disable schedules, check credits, export before expiry | `operations/README.md` §3 · `sql/09` | Repo done · Run |
-| Every trial limitation and fallback disclosed | §10 | Run: fill table |
-| No tokens, credentials, PII or real data in the repo | `.gitignore` | Done |
-
-## How to reproduce
-1. `python generator/generate_data.py`. The output's sha256 must match `generator/manifest.json`.
-2. In Databricks, clone the repo as a Git folder.
-3. Run `notebooks/01_setup`.
-4. `01_setup` copies the CSVs from `/Volumes/workspace/ecom_poc/raw_files/` if present; otherwise upload both to `/Volumes/ecom_catalog/ecom_poc/raw_files/`.
-5. Run `02_landing_checks` → `03_bronze` → `04_silver` → `05_gold`, or run the Lakeflow Job.
-6. Build the dashboard, Genie and Power BI from `dashboards/` and `powerbi/`.
+1. Run `python generator/generate_data.py` and confirm the output hashes match `generator/manifest.json`.
+2. Clone the repository into Databricks as a Git folder.
+3. Run `notebooks/01_setup`, then upload both CSVs to `/Volumes/ecom_catalog/ecom_poc/raw_files/` (setup copies them from `/Volumes/workspace/ecom_poc/raw_files/` if present).
+4. Run `02_landing_checks`, `03_bronze`, `04_silver` and `05_gold`, or run the Lakeflow Job after setting your own email and Git folder path.
+5. Build the dashboard and Genie agent from `sql/05` and `sql/06`, and the Power BI report from `powerbi/measures.dax`.
 
 ## Repository layout
-| Folder | Contents |
+
+| Path | Contents |
 |---|---|
-| `generator/` | Seeded generation script, dirty-data report, manifest (CSVs excluded) |
-| `notebooks/` | `00_config`, `01_setup`, `02_landing_checks`, `03_bronze`, `04_silver` (incl. reconciliation), `05_gold`, `06_export_gold_for_powerbi` (fallback) |
-| `sql/` | Setup, landing counts, Bronze/Silver checks, Gold metrics, dashboard datasets, Genie verification, cross-tool check, grants, credit usage, quality assertions |
-| `dashboards/` | AI/BI dashboard spec and export, Genie setup and question checks |
-| `powerbi/` | `.pbix`, DAX measures, connection guide (and Gold-only exports if the fallback was used) |
-| `operations/` | Lakeflow Job JSON, least-privilege plan, credit tracking, cleanup checklist |
+| `generator/` | Seeded generator, dirty-data report, manifest |
+| `notebooks/` | Config, setup, landing checks, Bronze, Silver, Gold, Power BI export fallback |
+| `sql/` | Setup, verification, metric, dashboard, grant and assertion queries |
+| `genie/` | Dashboard and Genie screenshots |
+| `powerbi/` | Report, screenshot, DAX measures |
+| `lakehouse/` | Job definition and run evidence |

@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/databricks/cli/main/bundle/schema/jsonschema.json
+resources:
+  jobs:
+    ecom_medallion_lakehouse:
+      name: ecom_medallion_lakehouse
+      description: Landing checks -> Bronze -> Silver -> Gold for
+        ecom_catalog.ecom_poc. Manual trigger only (no schedule).
+      email_notifications:
+        on_start:
+          - sumaiyamorshed213@gmail.com
+        on_success:
+          - sumaiyamorshed213@gmail.com
+        on_failure:
+          - sumaiyamorshed213@gmail.com
+        on_duration_warning_threshold_exceeded:
+          - sumaiyamorshed213@gmail.com
+      notification_settings:
+        no_alert_for_skipped_runs: true
+      timeout_seconds: 7200
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 1800
+      tasks:
+        - task_key: landing_checks
+          notebook_task:
+            notebook_path: /Workspace/Users/sumaiyamorshed213@gmail.com/databricks-medallion-ecom/notebooks/02_landing_checks
+            source: WORKSPACE
+          timeout_seconds: 1800
+          description: Verify landed CSVs match generator/manifest.json (rows, bytes,
+            sha256)
+        - task_key: bronze
+          depends_on:
+            - task_key: landing_checks
+          notebook_task:
+            notebook_path: /Workspace/Users/sumaiyamorshed213@gmail.com/databricks-medallion-ecom/notebooks/03_bronze
+            source: WORKSPACE
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
+          description: Lossless, idempotent STRING load into bronze_orders /
+            bronze_transactions
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          notebook_task:
+            notebook_path: /Workspace/Users/sumaiyamorshed213@gmail.com/databricks-medallion-ecom/notebooks/04_silver
+            source: WORKSPACE
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
+          description: Typing, rule validation, quarantine, deterministic dedup,
+            reconciliation
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          notebook_task:
+            notebook_path: /Workspace/Users/sumaiyamorshed213@gmail.com/databricks-medallion-ecom/notebooks/05_gold
+            source: WORKSPACE
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 1800
+          description: Gold marts, documentation and grain/revenue assertions
+      queue:
+        enabled: true
+      parameters:
+        - name: catalog
+          default: ecom_catalog
+      performance_target: STANDARD
