@@ -24,24 +24,24 @@ AI/BI dashboard, Genie agent, Power BI (Import)
 
 ## Overview
 
-Daily CSV extracts of orders and payments contain nulls, text in numeric fields, inconsistent labels, invalid or future timestamps, orphan payments and duplicates. Reports built directly on them disagree. This project:
+Daily CSV extracts of orders and payments contain nulls, text in numeric fields, inconsistent labels, invalid or future timestamps, orphan payments and duplicates, so reports built directly on them disagree. This pipeline addresses that by:
 
-- keeps the raw data unchanged (landing and Bronze);
-- applies explicit, counted validation rules without silently dropping rows (Silver);
-- publishes one revenue definition that every reporting tool reuses (Gold).
+- preserving raw data unchanged (landing and Bronze);
+- applying explicit, counted validation rules without silently dropping rows (Silver);
+- publishing one revenue definition that every reporting tool reuses (Gold).
 
 ## Environment
 
 | Item | Value |
 |---|---|
-| Platform | Databricks free trial (14 days, started 2026-11-16) |
+| Platform | Databricks with Unity Catalog, Lakeflow Jobs, AI/BI and Genie |
 | ETL compute | Serverless notebooks |
 | BI compute | Serverless SQL warehouse, smallest size, 10-minute auto-stop |
 | Catalog / schema | `ecom_catalog` / `ecom_poc` |
 | Landing volume | `/Volumes/ecom_catalog/ecom_poc/raw_files/` |
 | Repository | <https://github.com/morshed11s/databricks-medallion-ecom> (connected as a Databricks Git folder) |
 
-The trial was chosen over Free Edition because the project needs Unity Catalog administration, a SQL warehouse endpoint for Power BI, and Lakeflow Jobs. Serverless notebooks suit the batch ETL work and bill only while code runs. One small warehouse serves all BI consumers. The job has no schedule, Power BI uses Import mode, and the warehouse auto-stops.
+The project relies on Unity Catalog administration, a SQL warehouse endpoint for Power BI, and Lakeflow Jobs. Serverless notebooks suit the batch ETL workload and run only while code executes. One small warehouse serves all BI consumers. The job is triggered manually, Power BI uses Import mode, and the warehouse auto-stops when idle.
 
 ### Naming
 
@@ -77,7 +77,7 @@ The catalog name is a single notebook and job parameter (`catalog`).
 | Unsupported currency | n/a | 4,027 |
 | **Total anomalous rows** | **75,729 (7.57%)** | **87,852 (8.79%)** |
 
-Anomalies are kept to a small, measured share so the data resembles production extracts, Silver's rejection counts can be verified against the generator, and the remaining rows still support meaningful analytics.
+Anomalies are held to a small, measured share so the data resembles production extracts and Silver's rejection counts can be verified against the generator.
 
 | File | Rows | Bytes |
 |---|---|---|
@@ -235,19 +235,18 @@ If figures differ, check in order: date filter mismatch, residual category or co
 | Notifications | Email on start, success, failure and duration warning |
 | Trigger | None (manual runs only) |
 
-Each task runs only if its upstream tasks succeed, so a failed Silver reconciliation prevents Gold from rebuilding on incomplete data, and the last good Gold tables remain in place. Two complete runs succeeded (about 10.5 minutes each).
+Each task runs only if its upstream tasks succeed, so a failed Silver reconciliation prevents Gold from rebuilding on incomplete data, and the last good Gold tables remain in place. A full end-to-end run takes about 10.5 minutes.
 
 ![Run history](lakehouse/lakehouse_job.png)
 
 **Least-privilege access** ([`sql/08_grants.sql`](sql/08_grants.sql)): the `ecom_reporting` group receives `USE CATALOG`, `USE SCHEMA` and `SELECT` on the five Gold tables, plus warehouse access. It has no access to Bronze, Silver, ops tables or the landing volume. The pipeline owner retains full rights.
 
-## Trial limitations
+## Deployment notes
 
-| Area | Status |
+| Area | Note |
 |---|---|
-| Catalog creation | `01_setup` runs `CREATE CATALOG IF NOT EXISTS`; if blocked, create it in Catalog Explorer |
-| Serverless notebooks, Lakeflow Jobs, AI/BI, Genie, email notifications | Available and used |
-| Reporting group and extra users | Not verified; `sql/08_grants.sql` is the intended grant set |
+| Catalog creation | `01_setup` runs `CREATE CATALOG IF NOT EXISTS`; if the workspace restricts this, create the catalog in Catalog Explorer |
+| Reporting group | `sql/08_grants.sql` defines the intended grant set; validate it against your workspace's groups and users before rollout |
 
 ## Reproducing the project
 
